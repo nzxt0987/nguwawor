@@ -146,7 +146,8 @@ local AntiAFKBtn = createButton("AntiAFK", "Anti-AFK", true, 1)
 local AutoClickBtn = createButton("AutoClick", "Auto Click", true, 2)
 local AutoCompBtn = createButton("AutoComp", "Auto Competition", true, 3)
 local AutoRollBtn = createButton("AutoRoll", "Auto Roll", true, 4)
-local CancelTrainBtn = createButton("CancelTrain", "Stop / Cancel Training", false, 5, true)
+local AutoClaimPetBtn = createButton("AutoClaimPet", "Auto Claim Pet Quest", true, 5)
+local CancelTrainBtn = createButton("CancelTrain", "Stop / Cancel Training", false, 6, true)
 
 local function createTitle(text, order)
     local lbl = Instance.new("TextLabel")
@@ -160,9 +161,9 @@ local function createTitle(text, order)
     lbl.Parent = ScrollFrame
 end
 
-createTitle("TREADMILL", 5)
-local AutoTreadmillBtn = createButton("AutoTreadmill", "Auto Treadmill", true, 6)
-local AutoW_TreadmillBtn = createButton("AutoW_Treadmill", "Max Weight Treadmill", true, 7)
+createTitle("TREADMILL", 7)
+local AutoTreadmillBtn = createButton("AutoTreadmill", "Auto Treadmill", true, 8)
+local AutoW_TreadmillBtn = createButton("AutoW_Treadmill", "Max Weight Treadmill", true, 9)
 
 -- ==========================================
 -- LOGIC / FITUR
@@ -194,12 +195,19 @@ end
 
 local function toggleNativeAutoClick(state)
     local val = state and 1 or 0
-    pcall(function() ReplicatedStorage.ServerMsg.Setting:InvokeServer("isAutoClick", val) end)
+    pcall(function()
+        local args = {
+            "isAutoClick",
+            val
+        }
+        ReplicatedStorage:WaitForChild("ServerMsg"):WaitForChild("Setting"):InvokeServer(unpack(args))
+    end)
 end
 
 local function doTrainLoop(toolName)
     if toolName == "Treadmill" then
         local paths = {
+            function() return workspace:WaitForChild("Scene"):WaitForChild("10"):WaitForChild("Training equipment"):WaitForChild("\232\128\144\229\138\1554") end,
             function() return workspace.Scene:GetChildren()[2]:GetChildren()[6]:GetChildren()[11] end,
             function() return workspace.Scene:GetChildren()[8]:GetChildren()[1]:GetChildren()[17] end,
             function() return workspace.Scene:GetChildren()[6]:GetChildren()[4]:GetChildren()[25] end,
@@ -318,6 +326,48 @@ handleToggle(AutoRollBtn, "AutoRoll", nil, false, function(state)
     end
 end)
 
+local function doClaimPetQuest()
+    pcall(function()
+        local rep = ReplicatedStorage
+        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177")
+        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177")
+        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("ClaimQuest")
+        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("ClaimPetQuest")
+    end)
+    pcall(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            for _, v in ipairs(playerGui:GetDescendants()) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                    local name = string.lower(v.Name)
+                    local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
+                    if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
+                        if typeof(firesignal) == "function" then
+                            firesignal(v.MouseButton1Click)
+                        elseif getconnections then
+                            for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                                conn:Fire()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Auto Claim Pet Quest
+handleToggle(AutoClaimPetBtn, "AutoClaimPet", nil, false, function(state)
+    if state then
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+                doClaimPetQuest()
+                task.wait(1)
+            end
+        end)
+    end
+end)
+
 -- Auto Competition
 handleToggle(AutoCompBtn, "AutoCompetition", nil, false, function(state)
     if state then
@@ -430,6 +480,18 @@ task.spawn(function()
         end)
     end
 
+    if not getgenv().GymStarToggles["AutoClaimPet"] then
+        getgenv().GymStarToggles["AutoClaimPet"] = true
+        AutoClaimPetBtn.Text = "Auto Claim Pet Quest: ON"
+        AutoClaimPetBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+                doClaimPetQuest()
+                task.wait(1)
+            end
+        end)
+    end
+
     if not getgenv().GymStarToggles["AntiAFK"] then
         getgenv().GymStarToggles["AntiAFK"] = true
         AntiAFKBtn.Text = "Anti-AFK: ON"
@@ -447,6 +509,27 @@ task.spawn(function()
         AutoClickBtn.Text = "Auto Click: ON"
         AutoClickBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
         toggleNativeAutoClick(true)
+    end
+
+    if not getgenv().GymStarToggles["AutoTreadmill"] then
+        getgenv().GymStarToggles["AutoTreadmill"] = true
+        AutoTreadmillBtn.Text = "Auto Treadmill: ON"
+        AutoTreadmillBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        
+        pcall(function()
+            local args = {
+                "StartTrain",
+                workspace:WaitForChild("Scene"):WaitForChild("10"):WaitForChild("Training equipment"):WaitForChild("\232\128\144\229\138\1554")
+            }
+            ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer(unpack(args))
+        end)
+
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoTreadmill"] and scriptRunning do
+                doTrainLoop("Treadmill")
+                task.wait(2)
+            end
+        end)
     end
 end)
 
