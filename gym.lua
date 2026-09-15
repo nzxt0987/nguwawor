@@ -7,7 +7,12 @@ local LocalPlayer = Players.LocalPlayer
 
 local function getTrainTarget(index)
     local success, result = pcall(function()
-        return workspace.Scene:GetChildren()[9]:GetChildren()[4]:GetChildren()[index]
+        local scene = workspace:FindFirstChild("Scene")
+        if not scene then return nil end
+        local children = scene:GetChildren()
+        if children[9] and children[9]:GetChildren()[4] then
+            return children[9]:GetChildren()[4]:GetChildren()[index]
+        end
     end)
     if success and result then return result end
     return nil
@@ -23,10 +28,13 @@ local ToolsData = {
     Back = { TargetIndex = 16, WeightIndex = 8 }
 }
 
+-- Target Container UI (Kompatibel Xeno & Executor Modern)
+local TargetGuiParent = (gethui and gethui()) or (CoreGui:FindFirstChild("RobloxGui") or CoreGui)
+
 -- Bersihkan GUI Lama dan Unload
-if CoreGui:FindFirstChild("GymStarMinGui") then
+if TargetGuiParent:FindFirstChild("GymStarMinGui") then
     if _G.GymStarUnload then pcall(_G.GymStarUnload) end
-    CoreGui.GymStarMinGui:Destroy()
+    TargetGuiParent.GymStarMinGui:Destroy()
 end
 
 -- Global State
@@ -41,7 +49,7 @@ local scriptRunning = true
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "GymStarMinGui"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = CoreGui
+ScreenGui.Parent = TargetGuiParent
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 240, 0, 350)
@@ -207,17 +215,22 @@ end
 local function doTrainLoop(toolName)
     if toolName == "Treadmill" then
         local paths = {
-            function() return workspace:WaitForChild("Scene"):WaitForChild("10"):WaitForChild("Training equipment"):WaitForChild("\232\128\144\229\138\1554") end,
-            function() return workspace.Scene:GetChildren()[2]:GetChildren()[6]:GetChildren()[11] end,
-            function() return workspace.Scene:GetChildren()[8]:GetChildren()[1]:GetChildren()[17] end,
-            function() return workspace.Scene:GetChildren()[6]:GetChildren()[4]:GetChildren()[25] end,
-            function() return workspace.Scene:GetChildren()[13]:GetChildren()[6]:GetChildren()[6] end,
-            function() return workspace.Scene:GetChildren()[4]:GetChildren()[3]:GetChildren()[5] end,
-            function() return workspace.Scene:GetChildren()[10]:GetChildren()[4]:GetChildren()[6] end,
-            function() return workspace.Scene:GetChildren()[9]:GetChildren()[4]:GetChildren()[21] end,
-            function() return workspace.Scene:GetChildren()[11]:GetChildren()[5]:GetChildren()[2] end,
-            function() return workspace.Scene:GetChildren()[1]:GetChildren()[2]:GetChildren()[18] end,
-            function() return workspace.Scene:GetChildren()[5]:GetChildren()[6]:GetChildren()[18] end
+            function() 
+                local scene = workspace:FindFirstChild("Scene")
+                local folder10 = scene and scene:FindFirstChild("10")
+                local eq = folder10 and folder10:FindFirstChild("Training equipment")
+                return eq and eq:FindFirstChild("\232\128\144\229\138\1554")
+            end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[2] and c[2]:GetChildren()[6] and c[2]:GetChildren()[6]:GetChildren()[11] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[8] and c[8]:GetChildren()[1] and c[8]:GetChildren()[1]:GetChildren()[17] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[6] and c[6]:GetChildren()[4] and c[6]:GetChildren()[4]:GetChildren()[25] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[13] and c[13]:GetChildren()[6] and c[13]:GetChildren()[6]:GetChildren()[6] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[4] and c[4]:GetChildren()[3] and c[4]:GetChildren()[3]:GetChildren()[5] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[10] and c[10]:GetChildren()[4] and c[10]:GetChildren()[4]:GetChildren()[6] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[9] and c[9]:GetChildren()[4] and c[9]:GetChildren()[4]:GetChildren()[21] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[11] and c[11]:GetChildren()[5] and c[11]:GetChildren()[5]:GetChildren()[2] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[1] and c[1]:GetChildren()[2] and c[1]:GetChildren()[2]:GetChildren()[18] end,
+            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[5] and c[5]:GetChildren()[6] and c[5]:GetChildren()[6]:GetChildren()[18] end
         }
         
         for _, getPath in ipairs(paths) do
@@ -225,17 +238,17 @@ local function doTrainLoop(toolName)
             pcall(function() currentTarget = getPath() end)
             
             if currentTarget then
-                local args = {
-                    [1] = "StartTrain",
-                    [2] = currentTarget
-                }
-                game:GetService("ReplicatedStorage").Msg.RemoteEvent:FireServer(unpack(args))
+                pcall(function()
+                    ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", currentTarget)
+                end)
             end
         end
     else
         local target = getTrainTarget(ToolsData[toolName].TargetIndex)
         if target then
-            ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", target)
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", target)
+            end)
         end
     end
 end
@@ -343,11 +356,17 @@ local function doClaimPetQuest()
                     local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
                     if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
                         if typeof(firesignal) == "function" then
-                            firesignal(v.MouseButton1Click)
+                            pcall(function() firesignal(v.MouseButton1Click) end)
                         elseif getconnections then
-                            for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
-                                conn:Fire()
-                            end
+                            pcall(function()
+                                for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                                    if type(conn) == "table" and conn.Function then
+                                        pcall(conn.Function)
+                                    elseif type(conn) == "table" and conn.Fire then
+                                        pcall(function() conn:Fire() end)
+                                    end
+                                end
+                            end)
                         end
                     end
                 end
@@ -441,14 +460,28 @@ end)
 CancelTrainBtn.MouseButton1Click:Connect(doCancelTrain)
 
 -- Anti-AFK
-handleToggle(AntiAFKBtn, "AntiAFK", nil, false, function(state)
-    if state then
-        if not antiAFKConnection then
-            antiAFKConnection = LocalPlayer.Idled:Connect(function()
+local function enableAntiAFK()
+    if not antiAFKConnection then
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        antiAFKConnection = LocalPlayer.Idled:Connect(function()
+            pcall(function()
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new())
             end)
-        end
+            pcall(function()
+                if VIM then
+                    VIM:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+                    task.wait(0.05)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+                end
+            end)
+        end)
+    end
+end
+
+handleToggle(AntiAFKBtn, "AntiAFK", nil, false, function(state)
+    if state then
+        enableAntiAFK()
     else
         if antiAFKConnection then
             antiAFKConnection:Disconnect()
@@ -496,12 +529,7 @@ task.spawn(function()
         getgenv().GymStarToggles["AntiAFK"] = true
         AntiAFKBtn.Text = "Anti-AFK: ON"
         AntiAFKBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
-        if not antiAFKConnection then
-            antiAFKConnection = LocalPlayer.Idled:Connect(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-        end
+        enableAntiAFK()
     end
 
     if not getgenv().GymStarToggles["AutoClick"] then
@@ -517,11 +545,13 @@ task.spawn(function()
         AutoTreadmillBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
         
         pcall(function()
-            local args = {
-                "StartTrain",
-                workspace:WaitForChild("Scene"):WaitForChild("10"):WaitForChild("Training equipment"):WaitForChild("\232\128\144\229\138\1554")
-            }
-            ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer(unpack(args))
+            local scene = workspace:FindFirstChild("Scene")
+            local folder10 = scene and scene:FindFirstChild("10")
+            local eq = folder10 and folder10:FindFirstChild("Training equipment")
+            local treadmillTarget = eq and eq:FindFirstChild("\232\128\144\229\138\1554")
+            if treadmillTarget then
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
+            end
         end)
 
         task.spawn(function()
