@@ -214,35 +214,18 @@ end
 
 local function doTrainLoop(toolName)
     if toolName == "Treadmill" then
-        local paths = {
-            function() 
-                local scene = workspace:FindFirstChild("Scene")
-                local folder10 = scene and scene:FindFirstChild("10")
-                local eq = folder10 and folder10:FindFirstChild("Training equipment")
-                return eq and eq:FindFirstChild("\232\128\144\229\138\1554")
-            end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[2] and c[2]:GetChildren()[6] and c[2]:GetChildren()[6]:GetChildren()[11] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[8] and c[8]:GetChildren()[1] and c[8]:GetChildren()[1]:GetChildren()[17] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[6] and c[6]:GetChildren()[4] and c[6]:GetChildren()[4]:GetChildren()[25] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[13] and c[13]:GetChildren()[6] and c[13]:GetChildren()[6]:GetChildren()[6] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[4] and c[4]:GetChildren()[3] and c[4]:GetChildren()[3]:GetChildren()[5] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[10] and c[10]:GetChildren()[4] and c[10]:GetChildren()[4]:GetChildren()[6] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[9] and c[9]:GetChildren()[4] and c[9]:GetChildren()[4]:GetChildren()[21] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[11] and c[11]:GetChildren()[5] and c[11]:GetChildren()[5]:GetChildren()[2] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[1] and c[1]:GetChildren()[2] and c[1]:GetChildren()[2]:GetChildren()[18] end,
-            function() local s = workspace:FindFirstChild("Scene") local c = s and s:GetChildren() return c and c[5] and c[5]:GetChildren()[6] and c[5]:GetChildren()[6]:GetChildren()[18] end
-        }
-        
-        for _, getPath in ipairs(paths) do
-            local currentTarget = nil
-            pcall(function() currentTarget = getPath() end)
-            
-            if currentTarget then
-                pcall(function()
-                    ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", currentTarget)
-                end)
+        pcall(function()
+            local treadmillTarget = workspace:FindFirstChild("Scene")
+                and workspace.Scene:FindFirstChild("11")
+                and workspace.Scene["11"]:FindFirstChild("Training equipment")
+                and workspace.Scene["11"]["Training equipment"]:FindFirstChild("Conveyor2")
+            if not treadmillTarget then
+                treadmillTarget = workspace:WaitForChild("Scene"):WaitForChild("11"):WaitForChild("Training equipment"):WaitForChild("Conveyor2")
             end
-        end
+            if treadmillTarget then
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
+            end
+        end)
     else
         local target = getTrainTarget(ToolsData[toolName].TargetIndex)
         if target then
@@ -282,9 +265,7 @@ local function handleToggle(btn, varName, toolName, isWeightBtn, customCallback)
                 -- Training: Otomatis Start Train dan Nyalakan Native AutoClick
                 if toolName then
                     task.spawn(function() doTrainLoop(toolName) end)
-                    if toolName ~= "Treadmill" then
-                        toggleNativeAutoClick(true)
-                    end
+                    toggleNativeAutoClick(true)
                 end
                 
                 -- Loop StartTrain supaya tidak terlepas jika di-knock
@@ -546,9 +527,12 @@ task.spawn(function()
         
         pcall(function()
             local scene = workspace:FindFirstChild("Scene")
-            local folder10 = scene and scene:FindFirstChild("10")
-            local eq = folder10 and folder10:FindFirstChild("Training equipment")
-            local treadmillTarget = eq and eq:FindFirstChild("\232\128\144\229\138\1554")
+            local folder11 = scene and scene:FindFirstChild("11")
+            local eq = folder11 and folder11:FindFirstChild("Training equipment")
+            local treadmillTarget = eq and eq:FindFirstChild("Conveyor2")
+            if not treadmillTarget then
+                treadmillTarget = workspace:WaitForChild("Scene"):WaitForChild("11"):WaitForChild("Training equipment"):WaitForChild("Conveyor2")
+            end
             if treadmillTarget then
                 ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
             end
