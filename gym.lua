@@ -329,25 +329,32 @@ local function doClaimPetQuest()
         local remoteEvent = msg:FindFirstChild("RemoteEvent")
         local remoteFunc = msg:FindFirstChild("RemoteFunction")
 
+        local claimCommands = {
+            "\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取任务奖励 (Claim Task Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取所有任务奖励 (Claim All Task Rewards)
+            "\233\162\134\229\143\150\231\175\174\231\155\175\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
+            "\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177", -- 领取成就奖励 (Claim Achievement Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177", -- 领取所有奖励 (Claim All Rewards)
+            "\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177", -- 领取宠物奖励 (Claim Pet Reward)
+            "ClaimQuest",
+            "ClaimPetQuest",
+            "ClaimPet"
+        }
+
         if remoteEvent then
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177") end) -- 领取任务奖励 (Claim Task Reward)
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177") end) -- 领取所有任务奖励 (Claim All Task Rewards)
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\231\175\174\231\155\175\229\165\150\229\138\177") end) -- 领取目标奖励 (Claim Target Reward)
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177") end) -- 领取成就奖励 (Claim Achievement Reward)
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177") end) -- 领取所有奖励 (Claim All Rewards)
-            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177") end)
-            pcall(function() remoteEvent:FireServer("ClaimQuest") end)
-            pcall(function() remoteEvent:FireServer("ClaimPetQuest") end)
-            pcall(function() remoteEvent:FireServer("ClaimPet") end)
+            for _, cmd in ipairs(claimCommands) do
+                pcall(function() remoteEvent:FireServer(cmd) end)
+            end
         end
 
         if remoteFunc then
-            pcall(function() remoteFunc:InvokeServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177") end)
-            pcall(function() remoteFunc:InvokeServer("ClaimPetQuest") end)
+            for _, cmd in ipairs(claimCommands) do
+                pcall(function() remoteFunc:InvokeServer(cmd) end)
+            end
         end
     end)
 
-    -- 2. Ringan & Efisien UI Clicker (Tanpa scan seluruh PlayerGui yang menyebabkan lag)
+    -- 2. Ringan & Efisien UI Clicker Kompatibel Xeno & All Executors
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
@@ -362,12 +369,18 @@ local function doClaimPetQuest()
             end
         end
 
-        -- Helper untuk klik button kompatibel Xeno / Executor modern
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        local GuiService = game:GetService("GuiService")
+
+        -- Helper klik multi-method (Dukungan penuh Xeno & Low-UNC Executor)
         local function clickBtn(v)
+            -- Method 1: Executor custom firesignal (Real/High-UNC Executors)
             if typeof(firesignal) == "function" then
                 pcall(function() firesignal(v.MouseButton1Click) end)
                 pcall(function() firesignal(v.Activated) end)
             end
+
+            -- Method 2: getconnections (Real/High-UNC Executors)
             if typeof(getconnections) == "function" then
                 pcall(function()
                     for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
@@ -378,6 +391,35 @@ local function doClaimPetQuest()
                     end
                 end)
             end
+
+            -- Method 3: Roblox Native GuiService + VirtualInputManager (Khusus Xeno & Low-UNC)
+            pcall(function()
+                if VIM and v.Visible then
+                    local oldSelected = GuiService.SelectedObject
+                    GuiService.SelectedObject = v
+                    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                    task.wait(0.02)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                    GuiService.SelectedObject = oldSelected
+                end
+            end)
+
+            -- Method 4: Simulasi Klik Mouse Koordinat Layar via VirtualInputManager (Fallback Xeno)
+            pcall(function()
+                if VIM and v.Visible and v.AbsolutePosition and v.AbsoluteSize then
+                    local pos = v.AbsolutePosition
+                    local size = v.AbsoluteSize
+                    if pos.X > 0 and pos.Y > 0 and size.X > 0 and size.Y > 0 then
+                        local cx = pos.X + (size.X / 2)
+                        local cy = pos.Y + (size.Y / 2) + 36 -- Inset offset Roblox
+                        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                        task.wait(0.02)
+                        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                    end
+                end
+            end)
+
+            -- Method 5: Activate
             pcall(function() if v.Activate then v:Activate() end end)
         end
 
