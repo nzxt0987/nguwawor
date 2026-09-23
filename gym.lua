@@ -321,34 +321,73 @@ handleToggle(AutoRollBtn, "AutoRoll", nil, false, function(state)
 end)
 
 local function doClaimPetQuest()
+    -- 1. Direct Server Remotes (Paket Remote Gym Star)
     pcall(function()
         local rep = ReplicatedStorage
-        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177")
-        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177")
-        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("ClaimQuest")
-        rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("ClaimPetQuest")
+        local msg = rep:FindFirstChild("Msg")
+        if not msg then return end
+        local remoteEvent = msg:FindFirstChild("RemoteEvent")
+        local remoteFunc = msg:FindFirstChild("RemoteFunction")
+
+        if remoteEvent then
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177") end) -- 领取任务奖励 (Claim Task Reward)
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177") end) -- 领取所有任务奖励 (Claim All Task Rewards)
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\231\175\174\231\155\175\229\165\150\229\138\177") end) -- 领取目标奖励 (Claim Target Reward)
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177") end) -- 领取成就奖励 (Claim Achievement Reward)
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177") end) -- 领取所有奖励 (Claim All Rewards)
+            pcall(function() remoteEvent:FireServer("\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177") end)
+            pcall(function() remoteEvent:FireServer("ClaimQuest") end)
+            pcall(function() remoteEvent:FireServer("ClaimPetQuest") end)
+            pcall(function() remoteEvent:FireServer("ClaimPet") end)
+        end
+
+        if remoteFunc then
+            pcall(function() remoteFunc:InvokeServer("\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177") end)
+            pcall(function() remoteFunc:InvokeServer("ClaimPetQuest") end)
+        end
     end)
+
+    -- 2. Ringan & Efisien UI Clicker (Tanpa scan seluruh PlayerGui yang menyebabkan lag)
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            for _, v in ipairs(playerGui:GetDescendants()) do
+        if not playerGui then return end
+
+        local targetGuis = {}
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" and gui.Name ~= "Chat" then
+                local nameLower = string.lower(gui.Name)
+                if nameLower:find("pet") or nameLower:find("quest") or nameLower:find("task") or nameLower:find("reward") or nameLower:find("main") then
+                    table.insert(targetGuis, gui)
+                end
+            end
+        end
+
+        -- Helper untuk klik button kompatibel Xeno / Executor modern
+        local function clickBtn(v)
+            if typeof(firesignal) == "function" then
+                pcall(function() firesignal(v.MouseButton1Click) end)
+                pcall(function() firesignal(v.Activated) end)
+            end
+            if typeof(getconnections) == "function" then
+                pcall(function()
+                    for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                        if type(conn) == "table" or typeof(conn) == "RBXScriptConnection" or typeof(conn) == "UserData" then
+                            if conn.Fire then pcall(function() conn:Fire() end) end
+                            if conn.Function then pcall(function() conn.Function() end) end
+                        end
+                    end
+                end)
+            end
+            pcall(function() if v.Activate then v:Activate() end end)
+        end
+
+        for _, gui in ipairs(targetGuis) do
+            for _, v in ipairs(gui:GetDescendants()) do
                 if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
                     local name = string.lower(v.Name)
                     local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
                     if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
-                        if typeof(firesignal) == "function" then
-                            pcall(function() firesignal(v.MouseButton1Click) end)
-                        elseif getconnections then
-                            pcall(function()
-                                for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
-                                    if type(conn) == "table" and conn.Function then
-                                        pcall(conn.Function)
-                                    elseif type(conn) == "table" and conn.Fire then
-                                        pcall(function() conn:Fire() end)
-                                    end
-                                end
-                            end)
-                        end
+                        clickBtn(v)
                     end
                 end
             end
@@ -362,7 +401,7 @@ handleToggle(AutoClaimPetBtn, "AutoClaimPet", nil, false, function(state)
         task.spawn(function()
             while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
                 doClaimPetQuest()
-                task.wait(1)
+                task.wait(2)
             end
         end)
     end
@@ -374,10 +413,11 @@ handleToggle(AutoCompBtn, "AutoCompetition", nil, false, function(state)
         -- Loop khusus pembasmi GUI Settlement agar tidak muncul sama sekali (Anti-Flash)
         local rsConnection
         local cachedSettlement = nil
+        local lastSearchTime = 0
         
         rsConnection = game:GetService("RunService").RenderStepped:Connect(function()
             if not getgenv().GymStarToggles["AutoCompetition"] or not scriptRunning then
-                rsConnection:Disconnect()
+                if rsConnection then rsConnection:Disconnect() end
                 return
             end
             pcall(function()
@@ -388,9 +428,13 @@ handleToggle(AutoCompBtn, "AutoCompetition", nil, false, function(state)
                         cachedSettlement.Enabled = false
                     end
                 else
-                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                    if playerGui then
-                        cachedSettlement = playerGui:FindFirstChild("Competition clearance settlement", true)
+                    local now = tick()
+                    if now - lastSearchTime > 1.5 then -- Throttle agar tidak lag (tidak recursive FindFirstChild 60x/detik)
+                        lastSearchTime = now
+                        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if playerGui then
+                            cachedSettlement = playerGui:FindFirstChild("Competition clearance settlement", true)
+                        end
                     end
                 end
             end)
@@ -501,7 +545,7 @@ task.spawn(function()
         task.spawn(function()
             while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
                 doClaimPetQuest()
-                task.wait(1)
+                task.wait(2)
             end
         end)
     end
