@@ -46,6 +46,9 @@ local scriptRunning = true
 local lowEndEnabled = false
 local lowEndOriginals = {}
 
+local superLowEndEnabled = false
+local superLowEndOriginals = {}
+
 local function saveOriginal(obj, key, value)
     if not lowEndOriginals[obj] then
         lowEndOriginals[obj] = {}
@@ -136,6 +139,143 @@ local function stopLowEndWatcher()
     if lowEndDescendantConnection then
         lowEndDescendantConnection:Disconnect()
         lowEndDescendantConnection = nil
+    end
+end
+
+-- ==========================================
+-- SUPER LOW END / POTATO MODE GRAPHICS
+-- ==========================================
+local function saveSuperOriginal(obj, key, value)
+    if not superLowEndOriginals[obj] then
+        superLowEndOriginals[obj] = {}
+    end
+    if superLowEndOriginals[obj][key] == nil then
+        superLowEndOriginals[obj][key] = value
+    end
+end
+
+local function setSuperLowEndObject(obj)
+    pcall(function()
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Trail")
+        or obj:IsA("Beam")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles")
+        or obj:IsA("Highlight")
+        or obj:IsA("Explosion") then
+            saveSuperOriginal(obj, "Enabled", obj.Enabled)
+            obj.Enabled = false
+
+        elseif obj:IsA("BasePart") then
+            saveSuperOriginal(obj, "Material", obj.Material)
+            saveSuperOriginal(obj, "Reflectance", obj.Reflectance)
+            saveSuperOriginal(obj, "CastShadow", obj.CastShadow)
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+
+            if obj:IsA("MeshPart") then
+                saveSuperOriginal(obj, "TextureID", obj.TextureID)
+                obj.TextureID = ""
+            end
+
+        elseif obj:IsA("SpecialMesh") then
+            saveSuperOriginal(obj, "TextureId", obj.TextureId)
+            obj.TextureId = ""
+
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            saveSuperOriginal(obj, "Transparency", obj.Transparency)
+            obj.Transparency = 1
+
+        elseif obj:IsA("PostEffect")
+        or obj:IsA("BlurEffect")
+        or obj:IsA("BloomEffect")
+        or obj:IsA("SunRaysEffect")
+        or obj:IsA("DepthOfFieldEffect")
+        or obj:IsA("ColorCorrectionEffect") then
+            saveSuperOriginal(obj, "Enabled", obj.Enabled)
+            obj.Enabled = false
+        end
+    end)
+end
+
+local superLowEndDescendantConnection = nil
+
+local function enableSuperLowEnd()
+    if superLowEndEnabled then return end
+    superLowEndEnabled = true
+
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        saveSuperOriginal(lighting, "GlobalShadows", lighting.GlobalShadows)
+        saveSuperOriginal(lighting, "FogEnd", lighting.FogEnd)
+        lighting.GlobalShadows = false
+        lighting.FogEnd = 9e9
+
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            saveSuperOriginal(terrain, "WaterWaveSize", terrain.WaterWaveSize)
+            saveSuperOriginal(terrain, "WaterWaveSpeed", terrain.WaterWaveSpeed)
+            saveSuperOriginal(terrain, "WaterReflectance", terrain.WaterReflectance)
+            saveSuperOriginal(terrain, "WaterTransparency", terrain.WaterTransparency)
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+            terrain.WaterReflectance = 0
+            terrain.WaterTransparency = 1
+        end
+
+        pcall(function()
+            if settings and settings().Rendering then
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+            end
+        end)
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            setSuperLowEndObject(obj)
+        end
+
+        for _, obj in ipairs(lighting:GetChildren()) do
+            setSuperLowEndObject(obj)
+        end
+    end)
+end
+
+local function disableSuperLowEnd()
+    if not superLowEndEnabled then return end
+    superLowEndEnabled = false
+
+    for obj, props in pairs(superLowEndOriginals) do
+        pcall(function()
+            if not obj then return end
+
+            for key, value in pairs(props) do
+                obj[key] = value
+            end
+        end)
+    end
+
+    if table.clear then
+        table.clear(superLowEndOriginals)
+    else
+        superLowEndOriginals = {}
+    end
+end
+
+local function watchSuperLowEndObjects()
+    if superLowEndDescendantConnection then return end
+
+    superLowEndDescendantConnection = workspace.DescendantAdded:Connect(function(obj)
+        if superLowEndEnabled then
+            setSuperLowEndObject(obj)
+        end
+    end)
+end
+
+local function stopSuperLowEndWatcher()
+    if superLowEndDescendantConnection then
+        superLowEndDescendantConnection:Disconnect()
+        superLowEndDescendantConnection = nil
     end
 end
 
@@ -252,7 +392,8 @@ local AutoCompBtn = createButton("AutoComp", "Auto Competition", true, 3)
 local AutoRollBtn = createButton("AutoRoll", "Auto Roll", true, 4)
 local AutoClaimPetBtn = createButton("AutoClaimPet", "Auto Claim Pet Quest", true, 5)
 local LowEndBtn = createButton("LowEndMode", "Low End Graphics", true, 6)
-local CancelTrainBtn = createButton("CancelTrain", "Stop / Cancel Training", false, 7, true)
+local SuperLowEndBtn = createButton("SuperLowEndMode", "Super Low End Graphics", true, 7)
+local CancelTrainBtn = createButton("CancelTrain", "Stop / Cancel Training", false, 8, true)
 
 local function createTitle(text, order)
     local lbl = Instance.new("TextLabel")
@@ -266,9 +407,9 @@ local function createTitle(text, order)
     lbl.Parent = ScrollFrame
 end
 
-createTitle("TREADMILL", 8)
-local AutoTreadmillBtn = createButton("AutoTreadmill", "Auto Treadmill", true, 9)
-local AutoW_TreadmillBtn = createButton("AutoW_Treadmill", "Max Weight Treadmill", true, 10)
+createTitle("TREADMILL", 9)
+local AutoTreadmillBtn = createButton("AutoTreadmill", "Auto Treadmill", true, 10)
+local AutoW_TreadmillBtn = createButton("AutoW_Treadmill", "Max Weight Treadmill", true, 11)
 
 -- ==========================================
 -- LOGIC / FITUR
@@ -401,6 +542,17 @@ handleToggle(LowEndBtn, "LowEndMode", nil, false, function(state)
     else
         disableLowEnd()
         stopLowEndWatcher()
+    end
+end)
+
+-- Super Low End Graphics (Potato Mode)
+handleToggle(SuperLowEndBtn, "SuperLowEndMode", nil, false, function(state)
+    if state then
+        enableSuperLowEnd()
+        watchSuperLowEndObjects()
+    else
+        disableSuperLowEnd()
+        stopSuperLowEndWatcher()
     end
 end)
 
@@ -757,6 +909,8 @@ _G.GymStarUnload = function()
     end
     stopLowEndWatcher()
     disableLowEnd()
+    stopSuperLowEndWatcher()
+    disableSuperLowEnd()
     doCancelTrain()
 end
 
