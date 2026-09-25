@@ -1,0 +1,768 @@
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local workspace = game:GetService("Workspace")
+local VirtualUser = game:GetService("VirtualUser")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local function getTrainTarget(index)
+    local success, result = pcall(function()
+        local scene = workspace:FindFirstChild("Scene")
+        if not scene then return nil end
+        local children = scene:GetChildren()
+        if children[9] and children[9]:GetChildren()[4] then
+            return children[9]:GetChildren()[4]:GetChildren()[index]
+        end
+    end)
+    if success and result then return result end
+    return nil
+end
+
+-- Data Alat & Beban
+local ToolsData = {
+    Chest = { TargetIndex = 2, WeightIndex = 8 },
+    Leg = { TargetIndex = 8, WeightIndex = 6 }, 
+    Abs = { TargetIndex = 21, WeightIndex = 6 },
+    Arm = { TargetIndex = 6, WeightIndex = 6 },
+    Treadmill = { TargetIndex = 14, WeightIndex = 8 },
+    Back = { TargetIndex = 16, WeightIndex = 8 }
+}
+
+-- Target Container UI (Kompatibel Xeno & Executor Modern)
+local TargetGuiParent = (gethui and gethui()) or (CoreGui:FindFirstChild("RobloxGui") or CoreGui)
+
+-- Bersihkan GUI Lama dan Unload
+if TargetGuiParent:FindFirstChild("GymStarMinGui") then
+    if _G.GymStarUnload then pcall(_G.GymStarUnload) end
+    TargetGuiParent.GymStarMinGui:Destroy()
+end
+
+-- Global State
+getgenv().GymStarToggles = {}
+getgenv().AutoFarmAllActive = false
+local antiAFKConnection = nil
+local scriptRunning = true
+
+local lowEndEnabled = false
+local lowEndOriginals = {}
+
+local function saveOriginal(obj, key, value)
+    if not lowEndOriginals[obj] then
+        lowEndOriginals[obj] = {}
+    end
+    if lowEndOriginals[obj][key] == nil then
+        lowEndOriginals[obj][key] = value
+    end
+end
+
+local function setLowEndObject(obj)
+    pcall(function()
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Trail")
+        or obj:IsA("Beam")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles") then
+            saveOriginal(obj, "Enabled", obj.Enabled)
+            obj.Enabled = false
+
+        elseif obj:IsA("BasePart") then
+            saveOriginal(obj, "Material", obj.Material)
+            saveOriginal(obj, "Reflectance", obj.Reflectance)
+            saveOriginal(obj, "CastShadow", obj.CastShadow)
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+
+        elseif obj:IsA("PostEffect") then
+            saveOriginal(obj, "Enabled", obj.Enabled)
+            obj.Enabled = false
+        end
+    end)
+end
+
+local function enableLowEnd()
+    if lowEndEnabled then return end
+    lowEndEnabled = true
+
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            setLowEndObject(obj)
+        end
+
+        local lighting = game:GetService("Lighting")
+        for _, obj in ipairs(lighting:GetChildren()) do
+            if obj:IsA("PostEffect") then
+                setLowEndObject(obj)
+            end
+        end
+    end)
+end
+
+local function disableLowEnd()
+    if not lowEndEnabled then return end
+    lowEndEnabled = false
+
+    for obj, props in pairs(lowEndOriginals) do
+        pcall(function()
+            if not obj or not obj.Parent then return end
+
+            for key, value in pairs(props) do
+                obj[key] = value
+            end
+        end)
+    end
+
+    if table.clear then
+        table.clear(lowEndOriginals)
+    else
+        lowEndOriginals = {}
+    end
+end
+
+local lowEndDescendantConnection = nil
+
+local function watchLowEndObjects()
+    if lowEndDescendantConnection then return end
+
+    lowEndDescendantConnection = workspace.DescendantAdded:Connect(function(obj)
+        if lowEndEnabled then
+            setLowEndObject(obj)
+        end
+    end)
+end
+
+local function stopLowEndWatcher()
+    if lowEndDescendantConnection then
+        lowEndDescendantConnection:Disconnect()
+        lowEndDescendantConnection = nil
+    end
+end
+
+-- ==========================================
+-- UI DESIGN
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GymStarMinGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = TargetGuiParent
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 240, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -120, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundTransparency = 1
+TitleBar.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -60, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Gym Star Full Hub"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TitleBar
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 30, 0, 35)
+MinBtn.Position = UDim2.new(1, -60, 0, 0)
+MinBtn.BackgroundTransparency = 1
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 18
+MinBtn.Parent = TitleBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 35)
+CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+CloseBtn.Parent = TitleBar
+
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, 0, 1, -40)
+ScrollFrame.Position = UDim2.new(0, 0, 0, 35)
+ScrollFrame.BackgroundTransparency = 1
+ScrollFrame.ScrollBarThickness = 6
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 950) 
+ScrollFrame.Parent = MainFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollFrame
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Fungsi Minimize
+local isMinimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = UDim2.new(0, 240, 0, 35)
+        ScrollFrame.Visible = false
+    else
+        MainFrame.Size = UDim2.new(0, 240, 0, 350)
+        ScrollFrame.Visible = true
+    end
+end)
+
+-- Fungsi Helper Pembuat Tombol
+local function createButton(name, text, isToggle, order, isRed)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(0, 210, 0, 35)
+    btn.BackgroundColor3 = isRed and Color3.fromRGB(200, 50, 50) or Color3.fromRGB(45, 45, 45)
+    btn.Text = text .. (isToggle and ": OFF" or "")
+    btn.TextColor3 = isToggle and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 13
+    btn.LayoutOrder = order
+    btn.Parent = ScrollFrame
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    
+    return btn
+end
+
+-- ==========================================
+-- BUTTON CREATION
+-- ==========================================
+local AntiAFKBtn = createButton("AntiAFK", "Anti-AFK", true, 1)
+local AutoClickBtn = createButton("AutoClick", "Auto Click", true, 2)
+local AutoCompBtn = createButton("AutoComp", "Auto Competition", true, 3)
+local AutoRollBtn = createButton("AutoRoll", "Auto Roll", true, 4)
+local AutoClaimPetBtn = createButton("AutoClaimPet", "Auto Claim Pet Quest", true, 5)
+local LowEndBtn = createButton("LowEndMode", "Low End Graphics", true, 6)
+local CancelTrainBtn = createButton("CancelTrain", "Stop / Cancel Training", false, 7, true)
+
+local function createTitle(text, order)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 20)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "--- " .. text .. " ---"
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 12
+    lbl.LayoutOrder = order
+    lbl.Parent = ScrollFrame
+end
+
+createTitle("TREADMILL", 8)
+local AutoTreadmillBtn = createButton("AutoTreadmill", "Auto Treadmill", true, 9)
+local AutoW_TreadmillBtn = createButton("AutoW_Treadmill", "Max Weight Treadmill", true, 10)
+
+-- ==========================================
+-- LOGIC / FITUR
+-- ==========================================
+
+
+local function doCancelTrain()
+    pcall(function()
+        ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\233\128\128\229\135\186\232\174\173\231\187\131")
+        ReplicatedStorage:WaitForChild("ServerMsg"):WaitForChild("Setting"):InvokeServer("isAutoClick", 0)
+    end)
+end
+
+-- Fungsi Helper Equip Latihan & Beban
+local function equipWeightDirect(toolName)
+    local data = ToolsData[toolName]
+    if toolName == "Leg" then
+        -- Untuk Leg: Kurangi beban index 1, lalu tambah index 6 sampai max (10x)
+        pcall(function() ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\174\190\231\189\174\230\140\161\228\189\141", {Index = 1, Count = -1}) end)
+        task.wait(0.2)
+        for i = 1, 10 do
+            pcall(function() ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\174\190\231\189\174\230\140\161\228\189\141", {Index = 6, Count = 1}) end)
+            task.wait(0.05)
+        end
+    else
+        -- Untuk alat lain, panggil beban sesuai setting
+        pcall(function() ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\174\190\231\189\174\230\140\161\228\189\141", {Index = data.WeightIndex, Count = 1}) end)
+    end
+end
+
+local function toggleNativeAutoClick(state)
+    local val = state and 1 or 0
+    pcall(function()
+        local args = {
+            "isAutoClick",
+            val
+        }
+        ReplicatedStorage:WaitForChild("ServerMsg"):WaitForChild("Setting"):InvokeServer(unpack(args))
+    end)
+end
+
+local function doTrainLoop(toolName)
+    if toolName == "Treadmill" then
+        pcall(function()
+            local treadmillTarget = workspace:FindFirstChild("Scene")
+                and workspace.Scene:FindFirstChild("11")
+                and workspace.Scene["11"]:FindFirstChild("Training equipment")
+                and workspace.Scene["11"]["Training equipment"]:FindFirstChild("Conveyor2")
+            if not treadmillTarget then
+                treadmillTarget = workspace:WaitForChild("Scene"):WaitForChild("11"):WaitForChild("Training equipment"):WaitForChild("Conveyor2")
+            end
+            if treadmillTarget then
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
+            end
+        end)
+    else
+        local target = getTrainTarget(ToolsData[toolName].TargetIndex)
+        if target then
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", target)
+            end)
+        end
+    end
+end
+
+-- Fungsi Toggle Universal
+local function handleToggle(btn, varName, toolName, isWeightBtn, customCallback)
+    getgenv().GymStarToggles[varName] = false
+    btn.MouseButton1Click:Connect(function()
+        if not scriptRunning then return end
+        
+
+        
+        getgenv().GymStarToggles[varName] = not getgenv().GymStarToggles[varName]
+        local isActive = getgenv().GymStarToggles[varName]
+        
+        if isActive then
+            btn.Text = string.gsub(btn.Text, "OFF", "ON")
+            btn.TextColor3 = Color3.fromRGB(100, 255, 100)
+            
+            if customCallback then
+                task.spawn(function() customCallback(true) end)
+            elseif isWeightBtn then
+                -- Loop max weight agar tidak terlepas
+                task.spawn(function()
+                    while getgenv().GymStarToggles[varName] and scriptRunning do
+                        equipWeightDirect(toolName)
+                        task.wait(5)
+                    end
+                end)
+            else
+                -- Training: Otomatis Start Train dan Nyalakan Native AutoClick
+                if toolName then
+                    task.spawn(function() doTrainLoop(toolName) end)
+                    toggleNativeAutoClick(true)
+                end
+                
+                -- Loop StartTrain supaya tidak terlepas jika di-knock
+                task.spawn(function()
+                    while getgenv().GymStarToggles[varName] and scriptRunning do
+                        if toolName then
+                            doTrainLoop(toolName)
+                        end
+                        task.wait(2)
+                    end
+                end)
+            end
+        else
+            btn.Text = string.gsub(btn.Text, "ON", "OFF")
+            btn.TextColor3 = Color3.fromRGB(255, 100, 100)
+            
+            if customCallback then
+                task.spawn(function() customCallback(false) end)
+            elseif not isWeightBtn and toolName then
+                toggleNativeAutoClick(false)
+            end
+        end
+    end)
+end
+
+-- Apply Logic Individual
+handleToggle(AutoTreadmillBtn, "AutoTreadmill", "Treadmill", false)
+handleToggle(AutoW_TreadmillBtn, "AutoW_Treadmill", "Treadmill", true)
+
+-- Low End Graphics
+handleToggle(LowEndBtn, "LowEndMode", nil, false, function(state)
+    if state then
+        enableLowEnd()
+        watchLowEndObjects()
+    else
+        disableLowEnd()
+        stopLowEndWatcher()
+    end
+end)
+
+
+
+-- Auto Click (Manual)
+-- Auto Click (Native)
+handleToggle(AutoClickBtn, "AutoClick", nil, false, function(state)
+    toggleNativeAutoClick(state)
+end)
+
+-- Auto Roll
+handleToggle(AutoRollBtn, "AutoRoll", nil, false, function(state)
+    if state then
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoRoll"] and scriptRunning do
+                pcall(function()
+                    local args = {
+                        [1] = "\230\138\189\229\143\150\229\133\137\231\142\175"
+                    }
+                    game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer(unpack(args))
+                end)
+                task.wait(0.5)
+            end
+        end)
+    end
+end)
+
+local function doClaimPetQuest()
+    -- 1. Direct Server Remotes (Paket Remote Gym Star)
+    pcall(function()
+        local rep = ReplicatedStorage
+        local msg = rep:FindFirstChild("Msg")
+        if not msg then return end
+        local remoteEvent = msg:FindFirstChild("RemoteEvent")
+        local remoteFunc = msg:FindFirstChild("RemoteFunction")
+
+        local claimCommands = {
+            "\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取任务奖励 (Claim Task Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取所有任务奖励 (Claim All Task Rewards)
+            "\233\162\134\229\143\150\231\175\174\231\155\175\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
+            "\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177", -- 领取成就奖励 (Claim Achievement Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177", -- 领取所有奖励 (Claim All Rewards)
+            "\233\162\134\229\143\150\229\176\145\231\131\176\229\165\150\229\138\177", -- 领取宠物奖励 (Claim Pet Reward)
+            "ClaimQuest",
+            "ClaimPetQuest",
+            "ClaimPet"
+        }
+
+        if remoteEvent then
+            for _, cmd in ipairs(claimCommands) do
+                pcall(function() remoteEvent:FireServer(cmd) end)
+            end
+        end
+
+        if remoteFunc then
+            for _, cmd in ipairs(claimCommands) do
+                pcall(function() remoteFunc:InvokeServer(cmd) end)
+            end
+        end
+    end)
+
+    -- 2. Ringan & Efisien UI Clicker Kompatibel Xeno & All Executors
+    pcall(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then return end
+
+        local targetGuis = {}
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" and gui.Name ~= "Chat" then
+                local nameLower = string.lower(gui.Name)
+                if nameLower:find("pet") or nameLower:find("quest") or nameLower:find("task") or nameLower:find("reward") or nameLower:find("main") then
+                    table.insert(targetGuis, gui)
+                end
+            end
+        end
+
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        local GuiService = game:GetService("GuiService")
+
+        -- Helper klik multi-method (Dukungan penuh Xeno & Low-UNC Executor)
+        local function clickBtn(v)
+            -- Method 1: Executor custom firesignal (Real/High-UNC Executors)
+            if typeof(firesignal) == "function" then
+                pcall(function() firesignal(v.MouseButton1Click) end)
+                pcall(function() firesignal(v.Activated) end)
+            end
+
+            -- Method 2: getconnections (Real/High-UNC Executors)
+            if typeof(getconnections) == "function" then
+                pcall(function()
+                    for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                        if type(conn) == "table" or typeof(conn) == "RBXScriptConnection" or typeof(conn) == "UserData" then
+                            if conn.Fire then pcall(function() conn:Fire() end) end
+                            if conn.Function then pcall(function() conn.Function() end) end
+                        end
+                    end
+                end)
+            end
+
+            -- Method 3: Roblox Native GuiService + VirtualInputManager (Khusus Xeno & Low-UNC)
+            pcall(function()
+                if VIM and v.Visible then
+                    local oldSelected = GuiService.SelectedObject
+                    GuiService.SelectedObject = v
+                    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                    task.wait(0.02)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                    GuiService.SelectedObject = oldSelected
+                end
+            end)
+
+            -- Method 4: Simulasi Klik Mouse Koordinat Layar via VirtualInputManager (Fallback Xeno)
+            pcall(function()
+                if VIM and v.Visible and v.AbsolutePosition and v.AbsoluteSize then
+                    local pos = v.AbsolutePosition
+                    local size = v.AbsoluteSize
+                    if pos.X > 0 and pos.Y > 0 and size.X > 0 and size.Y > 0 then
+                        local cx = pos.X + (size.X / 2)
+                        local cy = pos.Y + (size.Y / 2) + 36 -- Inset offset Roblox
+                        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                        task.wait(0.02)
+                        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                    end
+                end
+            end)
+
+            -- Method 5: Activate
+            pcall(function() if v.Activate then v:Activate() end end)
+        end
+
+        for _, gui in ipairs(targetGuis) do
+            for _, v in ipairs(gui:GetDescendants()) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                    local name = string.lower(v.Name)
+                    local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
+                    if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
+                        clickBtn(v)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Auto Claim Pet Quest
+handleToggle(AutoClaimPetBtn, "AutoClaimPet", nil, false, function(state)
+    if state then
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+                doClaimPetQuest()
+                task.wait(2)
+            end
+        end)
+    end
+end)
+
+-- Auto Competition
+handleToggle(AutoCompBtn, "AutoCompetition", nil, false, function(state)
+    if state then
+        -- Loop khusus pembasmi GUI Settlement agar tidak muncul sama sekali (Anti-Flash)
+        local rsConnection
+        local cachedSettlement = nil
+        local lastSearchTime = 0
+        
+        rsConnection = game:GetService("RunService").RenderStepped:Connect(function()
+            if not getgenv().GymStarToggles["AutoCompetition"] or not scriptRunning then
+                if rsConnection then rsConnection:Disconnect() end
+                return
+            end
+            pcall(function()
+                if cachedSettlement and cachedSettlement.Parent then
+                    if cachedSettlement:IsA("GuiObject") and cachedSettlement.Visible then
+                        cachedSettlement.Visible = false
+                    elseif cachedSettlement:IsA("ScreenGui") and cachedSettlement.Enabled then
+                        cachedSettlement.Enabled = false
+                    end
+                else
+                    local now = tick()
+                    if now - lastSearchTime > 1.5 then -- Throttle agar tidak lag (tidak recursive FindFirstChild 60x/detik)
+                        lastSearchTime = now
+                        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if playerGui then
+                            cachedSettlement = playerGui:FindFirstChild("Competition clearance settlement", true)
+                        end
+                    end
+                end
+            end)
+        end)
+        
+        -- Gunakan loop khusus yang tidak mengandalkan wait dalam state yang aneh
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoCompetition"] and scriptRunning do
+                pcall(function()
+                    local rep = ReplicatedStorage
+                    
+                    -- Join kompetisi
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\143\130\229\138\160\230\175\148\232\181\155")
+                    task.wait(0.5)
+                    if not getgenv().GymStarToggles["AutoCompetition"] then return end
+                    
+                    -- Skip kompetisi
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\183\179\232\191\135\230\175\148\232\181\155")
+                    task.wait(0.5)
+                    if not getgenv().GymStarToggles["AutoCompetition"] then return end
+                    
+                    -- Selesai & ambil hadiah
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\187\182\232\191\159\233\162\134\229\143\150\229\165\150\229\138\177")
+                    task.wait(0.5)
+                end)
+                task.wait(0.5)
+            end
+        end)
+    else
+        -- Kembalikan GUI Settlement menjadi terlihat saat Auto dimatikan
+        pcall(function()
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local settlementGui = playerGui:FindFirstChild("Competition clearance settlement", true)
+                if settlementGui then
+                    if settlementGui:IsA("GuiObject") then
+                        settlementGui.Visible = true
+                    elseif settlementGui:IsA("ScreenGui") then
+                        settlementGui.Enabled = true
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Cancel Button
+CancelTrainBtn.MouseButton1Click:Connect(doCancelTrain)
+
+-- Anti-AFK
+local function enableAntiAFK()
+    if not antiAFKConnection then
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        antiAFKConnection = LocalPlayer.Idled:Connect(function()
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+            pcall(function()
+                if VIM then
+                    VIM:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+                    task.wait(0.05)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+                end
+            end)
+        end)
+    end
+end
+
+handleToggle(AntiAFKBtn, "AntiAFK", nil, false, function(state)
+    if state then
+        enableAntiAFK()
+    else
+        if antiAFKConnection then
+            antiAFKConnection:Disconnect()
+            antiAFKConnection = nil
+        end
+    end
+end)
+
+-- ==========================================
+-- AUTO START FEATURES
+-- ==========================================
+task.spawn(function()
+    task.wait(0.5)
+    if not getgenv().GymStarToggles["AutoRoll"] then
+        getgenv().GymStarToggles["AutoRoll"] = true
+        AutoRollBtn.Text = "Auto Roll: ON"
+        AutoRollBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoRoll"] and scriptRunning do
+                pcall(function()
+                    local args = {
+                        [1] = "\230\138\189\229\143\150\229\133\137\231\142\175"
+                    }
+                    game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer(unpack(args))
+                end)
+                task.wait(0.5)
+            end
+        end)
+    end
+
+    if not getgenv().GymStarToggles["AutoClaimPet"] then
+        getgenv().GymStarToggles["AutoClaimPet"] = true
+        AutoClaimPetBtn.Text = "Auto Claim Pet Quest: ON"
+        AutoClaimPetBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+                doClaimPetQuest()
+                task.wait(2)
+            end
+        end)
+    end
+
+    if not getgenv().GymStarToggles["AntiAFK"] then
+        getgenv().GymStarToggles["AntiAFK"] = true
+        AntiAFKBtn.Text = "Anti-AFK: ON"
+        AntiAFKBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        enableAntiAFK()
+    end
+
+    if not getgenv().GymStarToggles["AutoClick"] then
+        getgenv().GymStarToggles["AutoClick"] = true
+        AutoClickBtn.Text = "Auto Click: ON"
+        AutoClickBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        toggleNativeAutoClick(true)
+    end
+
+    if not getgenv().GymStarToggles["AutoTreadmill"] then
+        getgenv().GymStarToggles["AutoTreadmill"] = true
+        AutoTreadmillBtn.Text = "Auto Treadmill: ON"
+        AutoTreadmillBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+        
+        pcall(function()
+            local scene = workspace:FindFirstChild("Scene")
+            local folder11 = scene and scene:FindFirstChild("11")
+            local eq = folder11 and folder11:FindFirstChild("Training equipment")
+            local treadmillTarget = eq and eq:FindFirstChild("Conveyor2")
+            if not treadmillTarget then
+                treadmillTarget = workspace:WaitForChild("Scene"):WaitForChild("11"):WaitForChild("Training equipment"):WaitForChild("Conveyor2")
+            end
+            if treadmillTarget then
+                ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
+            end
+        end)
+
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoTreadmill"] and scriptRunning do
+                doTrainLoop("Treadmill")
+                task.wait(2)
+            end
+        end)
+    end
+end)
+
+-- ==========================================
+-- CLOSE / UNLOAD SCRIPT
+-- ==========================================
+_G.GymStarUnload = function()
+    scriptRunning = false
+
+    for k, _ in pairs(getgenv().GymStarToggles) do
+        getgenv().GymStarToggles[k] = false
+    end
+    if antiAFKConnection then
+        antiAFKConnection:Disconnect()
+        antiAFKConnection = nil
+    end
+    stopLowEndWatcher()
+    disableLowEnd()
+    doCancelTrain()
+end
+
+CloseBtn.MouseButton1Click:Connect(function()
+    _G.GymStarUnload()
+    if ScreenGui then
+        ScreenGui:Destroy()
+    end
+end)
