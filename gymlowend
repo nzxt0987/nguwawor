@@ -60,6 +60,10 @@ end
 
 local function setLowEndObject(obj)
     pcall(function()
+        if not obj or not obj.Parent then return end
+        -- Skip character local player
+        if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then return end
+
         if obj:IsA("ParticleEmitter")
         or obj:IsA("Trail")
         or obj:IsA("Beam")
@@ -88,9 +92,16 @@ local function enableLowEnd()
     if lowEndEnabled then return end
     lowEndEnabled = true
 
-    pcall(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
+    task.spawn(function()
+        local descendants = workspace:GetDescendants()
+        local count = 0
+        for _, obj in ipairs(descendants) do
+            if not lowEndEnabled then break end
             setLowEndObject(obj)
+            count = count + 1
+            if count % 200 == 0 then
+                task.wait()
+            end
         end
 
         local lighting = game:GetService("Lighting")
@@ -156,6 +167,10 @@ end
 
 local function setSuperLowEndObject(obj)
     pcall(function()
+        if not obj or not obj.Parent then return end
+        -- Skip local character & GUI
+        if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then return end
+
         if obj:IsA("ParticleEmitter")
         or obj:IsA("Trail")
         or obj:IsA("Beam")
@@ -206,38 +221,45 @@ local function enableSuperLowEnd()
     if superLowEndEnabled then return end
     superLowEndEnabled = true
 
-    pcall(function()
-        local lighting = game:GetService("Lighting")
-        saveSuperOriginal(lighting, "GlobalShadows", lighting.GlobalShadows)
-        saveSuperOriginal(lighting, "FogEnd", lighting.FogEnd)
-        lighting.GlobalShadows = false
-        lighting.FogEnd = 9e9
-
-        local terrain = workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            saveSuperOriginal(terrain, "WaterWaveSize", terrain.WaterWaveSize)
-            saveSuperOriginal(terrain, "WaterWaveSpeed", terrain.WaterWaveSpeed)
-            saveSuperOriginal(terrain, "WaterReflectance", terrain.WaterReflectance)
-            saveSuperOriginal(terrain, "WaterTransparency", terrain.WaterTransparency)
-            terrain.WaterWaveSize = 0
-            terrain.WaterWaveSpeed = 0
-            terrain.WaterReflectance = 0
-            terrain.WaterTransparency = 1
-        end
-
+    task.spawn(function()
         pcall(function()
-            if settings and settings().Rendering then
-                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+            local lighting = game:GetService("Lighting")
+            saveSuperOriginal(lighting, "GlobalShadows", lighting.GlobalShadows)
+            saveSuperOriginal(lighting, "FogEnd", lighting.FogEnd)
+            lighting.GlobalShadows = false
+            lighting.FogEnd = 9e9
+
+            local terrain = workspace:FindFirstChildOfClass("Terrain")
+            if terrain then
+                saveSuperOriginal(terrain, "WaterWaveSize", terrain.WaterWaveSize)
+                saveSuperOriginal(terrain, "WaterWaveSpeed", terrain.WaterWaveSpeed)
+                saveSuperOriginal(terrain, "WaterReflectance", terrain.WaterReflectance)
+                saveSuperOriginal(terrain, "WaterTransparency", terrain.WaterTransparency)
+                terrain.WaterWaveSize = 0
+                terrain.WaterWaveSpeed = 0
+                terrain.WaterReflectance = 0
+                terrain.WaterTransparency = 1
             end
         end)
 
-        for _, obj in ipairs(workspace:GetDescendants()) do
+        -- Batching loop dengan task.wait() agar main thread Roblox tidak freeze / DC (Error 277)
+        local descendants = workspace:GetDescendants()
+        local count = 0
+        for _, obj in ipairs(descendants) do
+            if not superLowEndEnabled then break end
             setSuperLowEndObject(obj)
+            count = count + 1
+            if count % 200 == 0 then
+                task.wait()
+            end
         end
 
-        for _, obj in ipairs(lighting:GetChildren()) do
-            setSuperLowEndObject(obj)
-        end
+        pcall(function()
+            local lighting = game:GetService("Lighting")
+            for _, obj in ipairs(lighting:GetChildren()) do
+                setSuperLowEndObject(obj)
+            end
+        end)
     end)
 end
 
