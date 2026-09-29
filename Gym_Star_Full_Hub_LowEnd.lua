@@ -747,7 +747,7 @@ local function doClaimPetQuest()
         local claimCommands = {
             "\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取任务奖励 (Claim Task Reward)
             "\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取所有任务奖励 (Claim All Task Rewards)
-            "\233\162\134\229\143\150\231\155\174\231\155\133\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
+            "\233\162\134\229\143\150\231\175\174\231\155\135\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
             "\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177", -- 领取成就奖励 (Claim Achievement Reward)
             "\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177", -- 领取所有奖励 (Claim All Rewards)
             "\233\162\134\229\143\150\229\176\145\231\131\169\229\165\150\229\138\177", -- 领取宠物奖励 (Claim Pet Reward)
@@ -756,7 +756,7 @@ local function doClaimPetQuest()
             "ClaimPet",
             "ClaimReward",
             "ClaimAllReward",
-            "ClaimPetReward",
+            "ClaimPetReward"
         }
 
         if remoteEvent then
@@ -767,50 +767,14 @@ local function doClaimPetQuest()
 
         if remoteFunc then
             for _, cmd in ipairs(claimCommands) do
-                pcall(function() remoteFunc:InvokeServer(cmd) end)
+                task.spawn(function()
+                    pcall(function() remoteFunc:InvokeServer(cmd) end)
+                end)
             end
         end
     end)
 
-    -- 2. Cari semua RemoteEvent/RemoteFunction di Msg dan sub-folder
-    pcall(function()
-        local msg = ReplicatedStorage:FindFirstChild("Msg")
-        if not msg then return end
-        for _, child in ipairs(msg:GetDescendants()) do
-            if child:IsA("RemoteEvent") then
-                local nameLower = string.lower(child.Name)
-                if nameLower:find("claim") or nameLower:find("pet") or nameLower:find("reward") or nameLower:find("quest") then
-                    pcall(function() child:FireServer() end)
-                end
-            elseif child:IsA("RemoteFunction") then
-                local nameLower = string.lower(child.Name)
-                if nameLower:find("claim") or nameLower:find("pet") or nameLower:find("reward") or nameLower:find("quest") then
-                    pcall(function() child:InvokeServer() end)
-                end
-            end
-        end
-    end)
-
-    -- 3. Scan ServerMsg folder juga
-    pcall(function()
-        local serverMsg = ReplicatedStorage:FindFirstChild("ServerMsg")
-        if not serverMsg then return end
-        for _, child in ipairs(serverMsg:GetDescendants()) do
-            if child:IsA("RemoteEvent") then
-                local nameLower = string.lower(child.Name)
-                if nameLower:find("claim") or nameLower:find("pet") or nameLower:find("reward") then
-                    pcall(function() child:FireServer() end)
-                end
-            elseif child:IsA("RemoteFunction") then
-                local nameLower = string.lower(child.Name)
-                if nameLower:find("claim") or nameLower:find("pet") or nameLower:find("reward") then
-                    pcall(function() child:InvokeServer() end)
-                end
-            end
-        end
-    end)
-
-    -- 4. Ringan & Efisien UI Clicker Kompatibel Xeno & All Executors
+    -- 2. UI Clicker (Fallback jika remote direct tidak langsung response)
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
@@ -818,25 +782,19 @@ local function doClaimPetQuest()
         local targetGuis = {}
         for _, gui in ipairs(playerGui:GetChildren()) do
             if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" and gui.Name ~= "Chat" then
-                local nameLower = string.lower(gui.Name)
-                if nameLower:find("pet") or nameLower:find("quest") or nameLower:find("task") or nameLower:find("reward") or nameLower:find("main") then
-                    table.insert(targetGuis, gui)
-                end
+                table.insert(targetGuis, gui)
             end
         end
 
         local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
         local GuiService = game:GetService("GuiService")
 
-        -- Helper klik multi-method (Dukungan penuh Xeno & Low-UNC Executor)
         local function clickBtn(v)
-            -- Method 1: Executor custom firesignal (Real/High-UNC Executors)
             if typeof(firesignal) == "function" then
                 pcall(function() firesignal(v.MouseButton1Click) end)
                 pcall(function() firesignal(v.Activated) end)
             end
 
-            -- Method 2: getconnections (Real/High-UNC Executors)
             if typeof(getconnections) == "function" then
                 pcall(function()
                     for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
@@ -848,7 +806,6 @@ local function doClaimPetQuest()
                 end)
             end
 
-            -- Method 3: Roblox Native GuiService + VirtualInputManager (Khusus Xeno & Low-UNC)
             pcall(function()
                 if VIM and v.Visible then
                     local oldSelected = GuiService.SelectedObject
@@ -860,22 +817,6 @@ local function doClaimPetQuest()
                 end
             end)
 
-            -- Method 4: Simulasi Klik Mouse Koordinat Layar via VirtualInputManager (Fallback Xeno)
-            pcall(function()
-                if VIM and v.Visible and v.AbsolutePosition and v.AbsoluteSize then
-                    local pos = v.AbsolutePosition
-                    local size = v.AbsoluteSize
-                    if pos.X > 0 and pos.Y > 0 and size.X > 0 and size.Y > 0 then
-                        local cx = pos.X + (size.X / 2)
-                        local cy = pos.Y + (size.Y / 2) + 36 -- Inset offset Roblox
-                        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                        task.wait(0.02)
-                        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                    end
-                end
-            end)
-
-            -- Method 5: Activate
             pcall(function() if v.Activate then v:Activate() end end)
         end
 
@@ -985,7 +926,7 @@ handleToggle(AutoClaimPetClick, "AutoClaimPet", nil, false, function(state)
         task.spawn(function()
             while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
                 doClaimPetQuest()
-                task.wait(3)
+                task.wait(2)
             end
         end)
     end
