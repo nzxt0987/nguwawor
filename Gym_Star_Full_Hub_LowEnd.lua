@@ -1,3 +1,6 @@
+local getgenv = (typeof(getgenv) == "function" and getgenv) or function() return _G end
+local gethui = (typeof(gethui) == "function" and gethui) or nil
+
 local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local workspace = game:GetService("Workspace")
@@ -35,20 +38,19 @@ if gethui then
     pcall(function() TargetGuiParent = gethui() end)
 end
 if not TargetGuiParent then
-    local success, res = pcall(function()
-        return CoreGui:FindFirstChild("RobloxGui") or CoreGui
-    end)
-    if success and res then
-        TargetGuiParent = res
-    else
-        TargetGuiParent = LocalPlayer:WaitForChild("PlayerGui")
-    end
+    pcall(function() TargetGuiParent = CoreGui:FindFirstChild("RobloxGui") end)
+end
+if not TargetGuiParent then
+    pcall(function() TargetGuiParent = CoreGui end)
+end
+if not TargetGuiParent then
+    pcall(function() TargetGuiParent = LocalPlayer:WaitForChild("PlayerGui") end)
 end
 
 -- Bersihkan GUI Lama dan Unload
 pcall(function()
+    if _G.GymStarUnload then pcall(_G.GymStarUnload) end
     if TargetGuiParent and TargetGuiParent:FindFirstChild("GymStarMinGui") then
-        if _G.GymStarUnload then pcall(_G.GymStarUnload) end
         TargetGuiParent.GymStarMinGui:Destroy()
     end
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -58,8 +60,9 @@ pcall(function()
 end)
 
 -- Global State & Loop Token Tracking
-getgenv().GymStarToggles = {}
-getgenv().AutoFarmAllActive = false
+local env = getgenv()
+env.GymStarToggles = env.GymStarToggles or {}
+env.AutoFarmAllActive = false
 local antiAFKConnection = nil
 local autoCompConnection = nil
 local autoCompCachedSettlement = nil
@@ -216,7 +219,7 @@ local function disableLowEnd()
         end)
     end
 
-    if table.clear then
+    if typeof(table.clear) == "function" then
         table.clear(lowEndOriginals)
     else
         lowEndOriginals = {}
@@ -251,9 +254,9 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Enabled = true
 
 pcall(function()
-    if syn and syn.protect_gui then
+    if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
         syn.protect_gui(ScreenGui)
-    elseif protectgui then
+    elseif typeof(protectgui) == "function" then
         protectgui(ScreenGui)
     end
 end)
@@ -725,15 +728,16 @@ local function doTrainLoop(toolName)
 end
 
 -- ==========================================
--- AUTO CLAIM PET (Optimized - Prevents Disconnect)
+-- AUTO CLAIM PET
 -- ==========================================
 local function doClaimPetQuest()
-    -- 1. Direct Server Remotes (Paket Remote Gym Star - Rate-Limited & Safe)
+    -- 1. Direct Server Remotes (Paket Remote Gym Star)
     pcall(function()
         local rep = ReplicatedStorage
         local msg = rep:FindFirstChild("Msg")
         if not msg then return end
         local remoteEvent = msg:FindFirstChild("RemoteEvent")
+        local remoteFunc = msg:FindFirstChild("RemoteFunction")
 
         local claimCommands = {
             "\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取任务奖励 (Claim Task Reward)
@@ -741,35 +745,83 @@ local function doClaimPetQuest()
             "\233\162\134\229\143\150\231\175\174\231\155\135\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
             "\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177", -- 领取成就奖励 (Claim Achievement Reward)
             "\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177", -- 领取所有奖励 (Claim All Rewards)
-            "\233\162\134\229\143\150\229\176\145\231\131\169\229\165\150\229\138\177"  -- 领取宠物奖励 (Claim Pet Reward)
+            "\233\162\134\229\143\150\229\176\145\231\131\169\229\165\150\229\138\177", -- 领取宠物奖励 (Claim Pet Reward)
+            "ClaimQuest",
+            "ClaimPetQuest",
+            "ClaimPet",
+            "ClaimReward",
+            "ClaimAllReward",
+            "ClaimPetReward"
         }
 
         if remoteEvent then
             for _, cmd in ipairs(claimCommands) do
-                if not scriptRunning then break end
                 pcall(function() remoteEvent:FireServer(cmd) end)
-                task.wait(0.08) -- Jeda kecil mencegah Remote Packet Overflow / Disconnect
+            end
+        end
+
+        if remoteFunc then
+            for _, cmd in ipairs(claimCommands) do
+                task.spawn(function()
+                    pcall(function() remoteFunc:InvokeServer(cmd) end)
+                end)
             end
         end
     end)
 
-    -- 2. UI Clicker (Optimized Scan)
+    -- 2. UI Clicker (Fallback)
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
 
+        local targetGuis = {}
         for _, gui in ipairs(playerGui:GetChildren()) do
             if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" and gui.Name ~= "Chat" then
-                for _, v in ipairs(gui:GetDescendants()) do
-                    if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
-                        local name = string.lower(v.Name)
-                        local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
-                        if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
-                            if typeof(firesignal) == "function" then
-                                pcall(function() firesignal(v.MouseButton1Click) end)
-                            end
-                            pcall(function() if v.Activate then v:Activate() end end)
+                table.insert(targetGuis, gui)
+            end
+        end
+
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        local GuiService = game:GetService("GuiService")
+
+        local function clickBtn(v)
+            if typeof(firesignal) == "function" then
+                pcall(function() firesignal(v.MouseButton1Click) end)
+                pcall(function() firesignal(v.Activated) end)
+            end
+
+            if typeof(getconnections) == "function" then
+                pcall(function()
+                    for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                        if type(conn) == "table" or typeof(conn) == "RBXScriptConnection" or typeof(conn) == "UserData" then
+                            if conn.Fire then pcall(function() conn:Fire() end) end
+                            if conn.Function then pcall(function() conn.Function() end) end
                         end
+                    end
+                end)
+            end
+
+            pcall(function()
+                if VIM and v.Visible then
+                    local oldSelected = GuiService.SelectedObject
+                    GuiService.SelectedObject = v
+                    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                    task.wait(0.02)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                    GuiService.SelectedObject = oldSelected
+                end
+            end)
+
+            pcall(function() if v.Activate then v:Activate() end end)
+        end
+
+        for _, gui in ipairs(targetGuis) do
+            for _, v in ipairs(gui:GetDescendants()) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                    local name = string.lower(v.Name)
+                    local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
+                    if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
+                        clickBtn(v)
                     end
                 end
             end
@@ -781,12 +833,12 @@ end
 -- TOGGLE HANDLER (Universal with Loop Tokens)
 -- ==========================================
 local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCallback, toggleTrack, toggleKnob, iconLabel)
-    getgenv().GymStarToggles[varName] = false
+    env.GymStarToggles[varName] = false
     clickBtn.MouseButton1Click:Connect(function()
         if not scriptRunning then return end
 
-        getgenv().GymStarToggles[varName] = not getgenv().GymStarToggles[varName]
-        local isActive = getgenv().GymStarToggles[varName]
+        env.GymStarToggles[varName] = not env.GymStarToggles[varName]
+        local isActive = env.GymStarToggles[varName]
         local currentToken = getNextToken(varName)
 
         setToggleVisual(isActive, toggleTrack, toggleKnob, iconLabel)
@@ -796,9 +848,9 @@ local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCall
                 task.spawn(function() customCallback(true, currentToken) end)
             elseif isWeightBtn then
                 task.spawn(function()
-                    while getgenv().GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
+                    while env.GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
                         equipWeightDirect(toolName)
-                        task.wait(6)
+                        task.wait(5)
                     end
                 end)
             else
@@ -807,11 +859,11 @@ local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCall
                     toggleNativeAutoClick(true)
                 end
                 task.spawn(function()
-                    while getgenv().GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
+                    while env.GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
                         if toolName then
                             doTrainLoop(toolName)
                         end
-                        task.wait(8) -- Delay aman agar tidak menyepam StartTrain remote
+                        task.wait(2)
                     end
                 end)
             end
@@ -852,11 +904,11 @@ handleToggle(AutoRollClick, "AutoRoll", nil, false, function(state, token)
     if state then
         local currentToken = token or getNextToken("AutoRoll")
         task.spawn(function()
-            while getgenv().GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == currentToken do
+            while env.GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == currentToken do
                 pcall(function()
                     game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
                 end)
-                task.wait(1.2) -- Safe delay (mencegah RemoteFunction rate limit)
+                task.wait(1.2)
             end
         end)
     end
@@ -867,15 +919,15 @@ handleToggle(AutoClaimPetClick, "AutoClaimPet", nil, false, function(state, toke
     if state then
         local currentToken = token or getNextToken("AutoClaimPet")
         task.spawn(function()
-            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == currentToken do
+            while env.GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == currentToken do
                 doClaimPetQuest()
-                task.wait(5) -- Delay 5 detik aman dari disconnect
+                task.wait(5)
             end
         end)
     end
 end, AutoClaimPetTrack, AutoClaimPetKnob, AutoClaimPetIcon)
 
--- Auto Competition (Optimized: Tanpa RenderStepped untuk hemat CPU)
+-- Auto Competition (Optimized)
 local function stopAutoCompetition()
     if autoCompConnection then
         autoCompConnection:Disconnect()
@@ -899,7 +951,7 @@ handleToggle(AutoCompClick, "AutoCompetition", nil, false, function(state, token
         local currentToken = token or getNextToken("AutoCompetition")
 
         task.spawn(function()
-            while getgenv().GymStarToggles["AutoCompetition"] and scriptRunning and activeLoopTokens["AutoCompetition"] == currentToken do
+            while env.GymStarToggles["AutoCompetition"] and scriptRunning and activeLoopTokens["AutoCompetition"] == currentToken do
                 pcall(function()
                     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
                     if playerGui then
@@ -916,10 +968,10 @@ handleToggle(AutoCompClick, "AutoCompetition", nil, false, function(state, token
                     local rep = ReplicatedStorage
                     rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\143\130\229\138\160\230\175\148\232\181\155")
                     task.wait(0.6)
-                    if not getgenv().GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
+                    if not env.GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
                     rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\183\179\232\191\135\230\175\148\232\181\155")
                     task.wait(0.6)
-                    if not getgenv().GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
+                    if not env.GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
                     rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\187\182\232\191\159\233\162\134\229\143\150\229\165\150\229\138\177")
                 end)
                 task.wait(0.8)
@@ -965,11 +1017,11 @@ end, AntiAFKTrack, AntiAFKKnob, AntiAFKIcon)
 CancelTrainBtn.MouseButton1Click:Connect(doCancelTrain)
 
 -- ==========================================
--- AUTO START FEATURES (Staggered Execution to Prevent Packet Flood)
+-- AUTO START FEATURES (Staggered Execution)
 -- ==========================================
 local function startFeature(varName, toggleTrack, toggleKnob, iconLabel, startFn)
-    if not getgenv().GymStarToggles[varName] then
-        getgenv().GymStarToggles[varName] = true
+    if not env.GymStarToggles[varName] then
+        env.GymStarToggles[varName] = true
         local token = getNextToken(varName)
         setToggleVisual(true, toggleTrack, toggleKnob, iconLabel)
         task.spawn(function()
@@ -1002,7 +1054,7 @@ task.spawn(function()
 
     -- 4. Auto Claim Pet
     startFeature("AutoClaimPet", AutoClaimPetTrack, AutoClaimPetKnob, AutoClaimPetIcon, function(token)
-        while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == token do
+        while env.GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == token do
             doClaimPetQuest()
             task.wait(5)
         end
@@ -1025,16 +1077,16 @@ task.spawn(function()
         end)
         toggleNativeAutoClick(true)
 
-        while getgenv().GymStarToggles["AutoTreadmill"] and scriptRunning and activeLoopTokens["AutoTreadmill"] == token do
+        while env.GymStarToggles["AutoTreadmill"] and scriptRunning and activeLoopTokens["AutoTreadmill"] == token do
             doTrainLoop("Treadmill")
             task.wait(8)
         end
     end)
     task.wait(0.3)
 
-    -- 6. Auto Roll (Staggered Start & Safe Delay)
+    -- 6. Auto Roll
     startFeature("AutoRoll", AutoRollTrack, AutoRollKnob, AutoRollIcon, function(token)
-        while getgenv().GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == token do
+        while env.GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == token do
             pcall(function()
                 game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
             end)
@@ -1049,8 +1101,8 @@ end)
 _G.GymStarUnload = function()
     scriptRunning = false
 
-    for k, _ in pairs(getgenv().GymStarToggles) do
-        getgenv().GymStarToggles[k] = false
+    for k, _ in pairs(env.GymStarToggles) do
+        env.GymStarToggles[k] = false
         getNextToken(k) -- invalidate any active loops
     end
     if antiAFKConnection then
