@@ -29,14 +29,33 @@ local ToolsData = {
     Back = { TargetIndex = 16, WeightIndex = 8 }
 }
 
--- Target Container UI (Kompatibel Xeno & Executor Modern)
-local TargetGuiParent = (gethui and gethui()) or (CoreGui:FindFirstChild("RobloxGui") or CoreGui)
+-- Target Container UI (Kompatibel Semua Executor: Xeno, Solara, Mobile, Modern)
+local TargetGuiParent = nil
+if gethui then
+    pcall(function() TargetGuiParent = gethui() end)
+end
+if not TargetGuiParent then
+    local success, res = pcall(function()
+        return CoreGui:FindFirstChild("RobloxGui") or CoreGui
+    end)
+    if success and res then
+        TargetGuiParent = res
+    else
+        TargetGuiParent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
 
 -- Bersihkan GUI Lama dan Unload
-if TargetGuiParent:FindFirstChild("GymStarMinGui") then
-    if _G.GymStarUnload then pcall(_G.GymStarUnload) end
-    TargetGuiParent.GymStarMinGui:Destroy()
-end
+pcall(function()
+    if TargetGuiParent and TargetGuiParent:FindFirstChild("GymStarMinGui") then
+        if _G.GymStarUnload then pcall(_G.GymStarUnload) end
+        TargetGuiParent.GymStarMinGui:Destroy()
+    end
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui and playerGui:FindFirstChild("GymStarMinGui") then
+        playerGui.GymStarMinGui:Destroy()
+    end
+end)
 
 -- Global State
 getgenv().GymStarToggles = {}
@@ -217,6 +236,16 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "GymStarMinGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Enabled = true
+
+pcall(function()
+    if syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+    elseif protectgui then
+        protectgui(ScreenGui)
+    end
+end)
+
 ScreenGui.Parent = TargetGuiParent
 
 -- Main Container
@@ -857,13 +886,6 @@ local function doClaimPetQuest()
                     local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
                     if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
                         clickBtn(v)
-                    end
-                end
-            end
-        end
-    end)
-end end)
-                        end
                     end
                 end
             end
