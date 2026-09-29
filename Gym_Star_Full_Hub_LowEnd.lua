@@ -57,10 +57,13 @@ pcall(function()
     end
 end)
 
--- Global State
+-- Global State & Loop Token Tracking
 getgenv().GymStarToggles = {}
 getgenv().AutoFarmAllActive = false
 local antiAFKConnection = nil
+local autoCompConnection = nil
+local autoCompCachedSettlement = nil
+local activeLoopTokens = {}
 local scriptRunning = true
 
 local lowEndEnabled = false
@@ -89,8 +92,15 @@ local Colors = {
     DangerAccent = Color3.fromRGB(220, 60, 60),
 }
 
+-- Helper untuk token loop (mencegah loop ganda saat rapid toggle)
+local function getNextToken(varName)
+    local nextTok = (activeLoopTokens[varName] or 0) + 1
+    activeLoopTokens[varName] = nextTok
+    return nextTok
+end
+
 -- ==========================================
--- LOW END GRAPHICS (Kept as single mode)
+-- LOW END GRAPHICS
 -- ==========================================
 local function saveOriginal(obj, key, value)
     if not lowEndOriginals[obj] then
@@ -174,7 +184,7 @@ local function enableLowEnd()
         local descendants = workspace:GetDescendants()
         local count = 0
         for _, obj in ipairs(descendants) do
-            if not lowEndEnabled then break end
+            if not lowEndEnabled or not scriptRunning then break end
             setLowEndObject(obj)
             count = count + 1
             if count % 200 == 0 then
@@ -182,12 +192,14 @@ local function enableLowEnd()
             end
         end
 
-        pcall(function()
-            local lighting = game:GetService("Lighting")
-            for _, obj in ipairs(lighting:GetChildren()) do
-                setLowEndObject(obj)
-            end
-        end)
+        if lowEndEnabled and scriptRunning then
+            pcall(function()
+                local lighting = game:GetService("Lighting")
+                for _, obj in ipairs(lighting:GetChildren()) do
+                    setLowEndObject(obj)
+                end
+            end)
+        end
     end)
 end
 
@@ -264,14 +276,12 @@ local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 12)
 mainCorner.Parent = MainFrame
 
--- Subtle border stroke
 local mainStroke = Instance.new("UIStroke")
 mainStroke.Color = Color3.fromRGB(60, 60, 90)
 mainStroke.Thickness = 1
 mainStroke.Transparency = 0.5
 mainStroke.Parent = MainFrame
 
--- Drop shadow (outer frame trick)
 local Shadow = Instance.new("ImageLabel")
 Shadow.Name = "Shadow"
 Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -301,7 +311,6 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 12)
 titleCorner.Parent = TitleBar
 
--- Fix bottom corners of title bar
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 14)
 titleFix.Position = UDim2.new(0, 0, 1, -14)
@@ -310,7 +319,6 @@ titleFix.BorderSizePixel = 0
 titleFix.ZIndex = 5
 titleFix.Parent = TitleBar
 
--- Gradient on title bar
 local titleGradient = Instance.new("UIGradient")
 titleGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(99, 102, 241)),
@@ -323,7 +331,6 @@ titleGradient.Transparency = NumberSequence.new({
 })
 titleGradient.Parent = TitleBar
 
--- Accent line below title
 local AccentLine = Instance.new("Frame")
 AccentLine.Size = UDim2.new(1, 0, 0, 1)
 AccentLine.Position = UDim2.new(0, 0, 1, 0)
@@ -333,7 +340,6 @@ AccentLine.BorderSizePixel = 0
 AccentLine.ZIndex = 6
 AccentLine.Parent = TitleBar
 
--- Icon indicator
 local IconDot = Instance.new("Frame")
 IconDot.Size = UDim2.new(0, 8, 0, 8)
 IconDot.Position = UDim2.new(0, 14, 0.5, -4)
@@ -357,7 +363,6 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.ZIndex = 6
 Title.Parent = TitleBar
 
--- Version badge
 local VerBadge = Instance.new("TextLabel")
 VerBadge.Size = UDim2.new(0, 28, 0, 16)
 VerBadge.Position = UDim2.new(0, 128, 0.5, -8)
@@ -436,13 +441,11 @@ scrollPadding.Parent = ScrollFrame
 -- UI HELPER FUNCTIONS
 -- ==========================================
 
--- Smooth tween helper
 local function tween(obj, props, duration)
     duration = duration or 0.25
     TweenService:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), props):Play()
 end
 
--- Section Title
 local function createSectionTitle(text, order)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, -16, 0, 28)
@@ -475,7 +478,6 @@ local function createSectionTitle(text, order)
     lineR.Parent = container
 end
 
--- Modern Toggle Button with slide indicator
 local function createToggleButton(name, text, order, icon)
     icon = icon or "●"
     
@@ -497,7 +499,6 @@ local function createToggleButton(name, text, order, icon)
     btnStroke.Transparency = 0.6
     btnStroke.Parent = btnFrame
 
-    -- Icon
     local iconLabel = Instance.new("TextLabel")
     iconLabel.Size = UDim2.new(0, 24, 1, 0)
     iconLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -508,7 +509,6 @@ local function createToggleButton(name, text, order, icon)
     iconLabel.TextSize = 10
     iconLabel.Parent = btnFrame
 
-    -- Label
     local label = Instance.new("TextLabel")
     label.Name = "Label"
     label.Size = UDim2.new(1, -90, 1, 0)
@@ -521,7 +521,6 @@ local function createToggleButton(name, text, order, icon)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = btnFrame
 
-    -- Toggle Track
     local toggleTrack = Instance.new("Frame")
     toggleTrack.Name = "ToggleTrack"
     toggleTrack.Size = UDim2.new(0, 38, 0, 20)
@@ -533,7 +532,6 @@ local function createToggleButton(name, text, order, icon)
     trackCorner.CornerRadius = UDim.new(1, 0)
     trackCorner.Parent = toggleTrack
 
-    -- Toggle Knob
     local toggleKnob = Instance.new("Frame")
     toggleKnob.Name = "ToggleKnob"
     toggleKnob.Size = UDim2.new(0, 16, 0, 16)
@@ -545,7 +543,6 @@ local function createToggleButton(name, text, order, icon)
     knobCorner.CornerRadius = UDim.new(1, 0)
     knobCorner.Parent = toggleKnob
 
-    -- Clickable overlay
     local clickBtn = Instance.new("TextButton")
     clickBtn.Name = "ClickBtn"
     clickBtn.Size = UDim2.new(1, 0, 1, 0)
@@ -554,7 +551,6 @@ local function createToggleButton(name, text, order, icon)
     clickBtn.ZIndex = 3
     clickBtn.Parent = btnFrame
 
-    -- Hover effect
     clickBtn.MouseEnter:Connect(function()
         tween(btnFrame, {BackgroundColor3 = Colors.BgCardHover}, 0.15)
     end)
@@ -565,7 +561,6 @@ local function createToggleButton(name, text, order, icon)
     return clickBtn, toggleTrack, toggleKnob, iconLabel, btnFrame
 end
 
--- Action Button (non-toggle, danger style)
 local function createActionButton(name, text, order, icon)
     icon = icon or "⚡"
 
@@ -609,7 +604,6 @@ local function createActionButton(name, text, order, icon)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = btn
 
-    -- Hover effect
     btn.MouseEnter:Connect(function()
         tween(btn, {BackgroundColor3 = Color3.fromRGB(75, 30, 35)}, 0.15)
     end)
@@ -620,7 +614,6 @@ local function createActionButton(name, text, order, icon)
     return btn
 end
 
--- Toggle animation helper
 local function setToggleVisual(isOn, toggleTrack, toggleKnob, iconLabel)
     if isOn then
         tween(toggleTrack, {BackgroundColor3 = Colors.ToggleOn}, 0.2)
@@ -682,7 +675,6 @@ local function doCancelTrain()
     end)
 end
 
--- Fungsi Helper Equip Latihan & Beban
 local function equipWeightDirect(toolName)
     local data = ToolsData[toolName]
     if toolName == "Leg" then
@@ -733,7 +725,7 @@ local function doTrainLoop(toolName)
 end
 
 -- ==========================================
--- AUTO CLAIM PET (Fixed & Improved)
+-- AUTO CLAIM PET
 -- ==========================================
 local function doClaimPetQuest()
     -- 1. Direct Server Remotes (Paket Remote Gym Star)
@@ -774,7 +766,7 @@ local function doClaimPetQuest()
         end
     end)
 
-    -- 2. UI Clicker (Fallback jika remote direct tidak langsung response)
+    -- 2. UI Clicker (Fallback)
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
@@ -835,7 +827,7 @@ local function doClaimPetQuest()
 end
 
 -- ==========================================
--- TOGGLE HANDLER (Universal)
+-- TOGGLE HANDLER (Universal with Loop Tokens)
 -- ==========================================
 local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCallback, toggleTrack, toggleKnob, iconLabel)
     getgenv().GymStarToggles[varName] = false
@@ -844,15 +836,16 @@ local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCall
 
         getgenv().GymStarToggles[varName] = not getgenv().GymStarToggles[varName]
         local isActive = getgenv().GymStarToggles[varName]
+        local currentToken = getNextToken(varName)
 
         setToggleVisual(isActive, toggleTrack, toggleKnob, iconLabel)
 
         if isActive then
             if customCallback then
-                task.spawn(function() customCallback(true) end)
+                task.spawn(function() customCallback(true, currentToken) end)
             elseif isWeightBtn then
                 task.spawn(function()
-                    while getgenv().GymStarToggles[varName] and scriptRunning do
+                    while getgenv().GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
                         equipWeightDirect(toolName)
                         task.wait(5)
                     end
@@ -863,7 +856,7 @@ local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCall
                     toggleNativeAutoClick(true)
                 end
                 task.spawn(function()
-                    while getgenv().GymStarToggles[varName] and scriptRunning do
+                    while getgenv().GymStarToggles[varName] and scriptRunning and activeLoopTokens[varName] == currentToken do
                         if toolName then
                             doTrainLoop(toolName)
                         end
@@ -873,7 +866,7 @@ local function handleToggle(clickBtn, varName, toolName, isWeightBtn, customCall
             end
         else
             if customCallback then
-                task.spawn(function() customCallback(false) end)
+                task.spawn(function() customCallback(false, currentToken) end)
             elseif not isWeightBtn and toolName then
                 toggleNativeAutoClick(false)
             end
@@ -904,10 +897,11 @@ handleToggle(AutoClickClick, "AutoClick", nil, false, function(state)
 end, AutoClickTrack, AutoClickKnob, AutoClickIcon)
 
 -- Auto Roll
-handleToggle(AutoRollClick, "AutoRoll", nil, false, function(state)
+handleToggle(AutoRollClick, "AutoRoll", nil, false, function(state, token)
     if state then
+        local currentToken = token or getNextToken("AutoRoll")
         task.spawn(function()
-            while getgenv().GymStarToggles["AutoRoll"] and scriptRunning do
+            while getgenv().GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == currentToken do
                 pcall(function()
                     local args = {
                         [1] = "\230\138\189\229\143\150\229\133\137\231\142\175"
@@ -920,11 +914,12 @@ handleToggle(AutoRollClick, "AutoRoll", nil, false, function(state)
     end
 end, AutoRollTrack, AutoRollKnob, AutoRollIcon)
 
--- Auto Claim Pet (Fixed)
-handleToggle(AutoClaimPetClick, "AutoClaimPet", nil, false, function(state)
+-- Auto Claim Pet
+handleToggle(AutoClaimPetClick, "AutoClaimPet", nil, false, function(state, token)
     if state then
+        local currentToken = token or getNextToken("AutoClaimPet")
         task.spawn(function()
-            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+            while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == currentToken do
                 doClaimPetQuest()
                 task.wait(2)
             end
@@ -933,56 +928,19 @@ handleToggle(AutoClaimPetClick, "AutoClaimPet", nil, false, function(state)
 end, AutoClaimPetTrack, AutoClaimPetKnob, AutoClaimPetIcon)
 
 -- Auto Competition
-handleToggle(AutoCompClick, "AutoCompetition", nil, false, function(state)
-    if state then
-        -- Anti-flash settlement GUI
-        local rsConnection
-        local cachedSettlement = nil
-        local lastSearchTime = 0
-
-        rsConnection = game:GetService("RunService").RenderStepped:Connect(function()
-            if not getgenv().GymStarToggles["AutoCompetition"] or not scriptRunning then
-                if rsConnection then rsConnection:Disconnect() end
-                return
+local function stopAutoCompetition()
+    if autoCompConnection then
+        autoCompConnection:Disconnect()
+        autoCompConnection = nil
+    end
+    pcall(function()
+        if autoCompCachedSettlement and autoCompCachedSettlement.Parent then
+            if autoCompCachedSettlement:IsA("GuiObject") then
+                autoCompCachedSettlement.Visible = true
+            elseif autoCompCachedSettlement:IsA("ScreenGui") then
+                autoCompCachedSettlement.Enabled = true
             end
-            pcall(function()
-                if cachedSettlement and cachedSettlement.Parent then
-                    if cachedSettlement:IsA("GuiObject") and cachedSettlement.Visible then
-                        cachedSettlement.Visible = false
-                    elseif cachedSettlement:IsA("ScreenGui") and cachedSettlement.Enabled then
-                        cachedSettlement.Enabled = false
-                    end
-                else
-                    local now = tick()
-                    if now - lastSearchTime > 1.5 then
-                        lastSearchTime = now
-                        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                        if playerGui then
-                            cachedSettlement = playerGui:FindFirstChild("Competition clearance settlement", true)
-                        end
-                    end
-                end
-            end)
-        end)
-
-        task.spawn(function()
-            while getgenv().GymStarToggles["AutoCompetition"] and scriptRunning do
-                pcall(function()
-                    local rep = ReplicatedStorage
-                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\143\130\229\138\160\230\175\148\232\181\155")
-                    task.wait(0.5)
-                    if not getgenv().GymStarToggles["AutoCompetition"] then return end
-                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\183\179\232\191\135\230\175\148\232\181\155")
-                    task.wait(0.5)
-                    if not getgenv().GymStarToggles["AutoCompetition"] then return end
-                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\187\182\232\191\159\233\162\134\229\143\150\229\165\150\229\138\177")
-                    task.wait(0.5)
-                end)
-                task.wait(0.5)
-            end
-        end)
-    else
-        pcall(function()
+        else
             local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
             if playerGui then
                 local settlementGui = playerGui:FindFirstChild("Competition clearance settlement", true)
@@ -994,7 +952,60 @@ handleToggle(AutoCompClick, "AutoCompetition", nil, false, function(state)
                     end
                 end
             end
+        end
+    end)
+    autoCompCachedSettlement = nil
+end
+
+handleToggle(AutoCompClick, "AutoCompetition", nil, false, function(state, token)
+    if state then
+        stopAutoCompetition()
+        local currentToken = token or getNextToken("AutoCompetition")
+        local lastSearchTime = 0
+
+        autoCompConnection = game:GetService("RunService").RenderStepped:Connect(function()
+            if not getgenv().GymStarToggles["AutoCompetition"] or not scriptRunning or activeLoopTokens["AutoCompetition"] ~= currentToken then
+                stopAutoCompetition()
+                return
+            end
+            pcall(function()
+                if autoCompCachedSettlement and autoCompCachedSettlement.Parent then
+                    if autoCompCachedSettlement:IsA("GuiObject") and autoCompCachedSettlement.Visible then
+                        autoCompCachedSettlement.Visible = false
+                    elseif autoCompCachedSettlement:IsA("ScreenGui") and autoCompCachedSettlement.Enabled then
+                        autoCompCachedSettlement.Enabled = false
+                    end
+                else
+                    local now = tick()
+                    if now - lastSearchTime > 1.5 then
+                        lastSearchTime = now
+                        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                        if playerGui then
+                            autoCompCachedSettlement = playerGui:FindFirstChild("Competition clearance settlement", true)
+                        end
+                    end
+                end
+            end)
         end)
+
+        task.spawn(function()
+            while getgenv().GymStarToggles["AutoCompetition"] and scriptRunning and activeLoopTokens["AutoCompetition"] == currentToken do
+                pcall(function()
+                    local rep = ReplicatedStorage
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\143\130\229\138\160\230\175\148\232\181\155")
+                    task.wait(0.5)
+                    if not getgenv().GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\232\183\179\232\191\135\230\175\148\232\181\155")
+                    task.wait(0.5)
+                    if not getgenv().GymStarToggles["AutoCompetition"] or activeLoopTokens["AutoCompetition"] ~= currentToken then return end
+                    rep:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("\229\187\182\232\191\159\233\162\134\229\143\150\229\165\150\229\138\177")
+                    task.wait(0.5)
+                end)
+                task.wait(0.5)
+            end
+        end)
+    else
+        stopAutoCompetition()
     end
 end, AutoCompTrack, AutoCompKnob, AutoCompIcon)
 
@@ -1033,22 +1044,31 @@ end, AntiAFKTrack, AntiAFKKnob, AntiAFKIcon)
 CancelTrainBtn.MouseButton1Click:Connect(doCancelTrain)
 
 -- ==========================================
--- AUTO START FEATURES
+-- AUTO START FEATURES (Including Low End)
 -- ==========================================
-local function autoStart(varName, toggleTrack, toggleKnob, iconLabel, startFn)
+local function startFeature(varName, toggleTrack, toggleKnob, iconLabel, startFn)
     if not getgenv().GymStarToggles[varName] then
         getgenv().GymStarToggles[varName] = true
+        local token = getNextToken(varName)
         setToggleVisual(true, toggleTrack, toggleKnob, iconLabel)
-        task.spawn(startFn)
+        task.spawn(function()
+            startFn(token)
+        end)
     end
 end
 
 task.spawn(function()
-    task.wait(0.5)
+    task.wait(0.3)
 
-    -- Auto Roll
-    autoStart("AutoRoll", AutoRollTrack, AutoRollKnob, AutoRollIcon, function()
-        while getgenv().GymStarToggles["AutoRoll"] and scriptRunning do
+    -- 1. Low End Graphics (AUTO ENABLED ON EXECUTION)
+    startFeature("LowEndMode", LowEndTrack, LowEndKnob, LowEndIcon, function()
+        enableLowEnd()
+        watchLowEndObjects()
+    end)
+
+    -- 2. Auto Roll
+    startFeature("AutoRoll", AutoRollTrack, AutoRollKnob, AutoRollIcon, function(token)
+        while getgenv().GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == token do
             pcall(function()
                 game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
             end)
@@ -1056,26 +1076,26 @@ task.spawn(function()
         end
     end)
 
-    -- Auto Claim Pet
-    autoStart("AutoClaimPet", AutoClaimPetTrack, AutoClaimPetKnob, AutoClaimPetIcon, function()
-        while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning do
+    -- 3. Auto Claim Pet
+    startFeature("AutoClaimPet", AutoClaimPetTrack, AutoClaimPetKnob, AutoClaimPetIcon, function(token)
+        while getgenv().GymStarToggles["AutoClaimPet"] and scriptRunning and activeLoopTokens["AutoClaimPet"] == token do
             doClaimPetQuest()
-            task.wait(3)
+            task.wait(2)
         end
     end)
 
-    -- Anti-AFK
-    autoStart("AntiAFK", AntiAFKTrack, AntiAFKKnob, AntiAFKIcon, function()
+    -- 4. Anti-AFK
+    startFeature("AntiAFK", AntiAFKTrack, AntiAFKKnob, AntiAFKIcon, function()
         enableAntiAFK()
     end)
 
-    -- Auto Click
-    autoStart("AutoClick", AutoClickTrack, AutoClickKnob, AutoClickIcon, function()
+    -- 5. Auto Click
+    startFeature("AutoClick", AutoClickTrack, AutoClickKnob, AutoClickIcon, function()
         toggleNativeAutoClick(true)
     end)
 
-    -- Auto Treadmill
-    autoStart("AutoTreadmill", AutoTreadmillTrack, AutoTreadmillKnob, AutoTreadmillIcon, function()
+    -- 6. Auto Treadmill
+    startFeature("AutoTreadmill", AutoTreadmillTrack, AutoTreadmillKnob, AutoTreadmillIcon, function(token)
         pcall(function()
             local scene = workspace:FindFirstChild("Scene")
             local folder11 = scene and scene:FindFirstChild("11")
@@ -1088,8 +1108,9 @@ task.spawn(function()
                 ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):FireServer("StartTrain", treadmillTarget)
             end
         end)
+        toggleNativeAutoClick(true)
 
-        while getgenv().GymStarToggles["AutoTreadmill"] and scriptRunning do
+        while getgenv().GymStarToggles["AutoTreadmill"] and scriptRunning and activeLoopTokens["AutoTreadmill"] == token do
             doTrainLoop("Treadmill")
             task.wait(2)
         end
@@ -1104,11 +1125,13 @@ _G.GymStarUnload = function()
 
     for k, _ in pairs(getgenv().GymStarToggles) do
         getgenv().GymStarToggles[k] = false
+        getNextToken(k) -- invalidate any active loops
     end
     if antiAFKConnection then
         antiAFKConnection:Disconnect()
         antiAFKConnection = nil
     end
+    stopAutoCompetition()
     stopLowEndWatcher()
     disableLowEnd()
     doCancelTrain()
