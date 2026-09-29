@@ -707,20 +707,21 @@ end
 -- AUTO CLAIM PET (Fixed & Improved)
 -- ==========================================
 local function doClaimPetQuest()
-    -- Method 1: Fire semua remote command yang diketahui
+    -- 1. Direct Server Remotes (Paket Remote Gym Star)
     pcall(function()
-        local msg = ReplicatedStorage:FindFirstChild("Msg")
+        local rep = ReplicatedStorage
+        local msg = rep:FindFirstChild("Msg")
         if not msg then return end
         local remoteEvent = msg:FindFirstChild("RemoteEvent")
         local remoteFunc = msg:FindFirstChild("RemoteFunction")
 
         local claimCommands = {
-            "\233\162\134\229\143\150\228\187\187\229\138\161\229\165\150\229\138\177", -- 领取任务奖励
-            "\233\162\134\229\143\150\230\137\128\230\156\137\228\187\187\229\138\161\229\165\150\229\138\177", -- 领取所有任务奖励
-            "\233\162\134\229\143\150\229\176\145\231\137\169\229\165\150\229\138\177", -- 领取宠物奖励
-            "\233\162\134\229\143\150\231\155\174\230\160\135\229\165\150\229\138\177", -- 领取目标奖励
-            "\233\162\134\229\143\150\230\136\144\229\176\177\229\165\150\229\138\177", -- 领取成就奖励
-            "\233\162\134\229\143\150\230\137\128\230\156\137\229\165\150\229\138\177", -- 领取所有奖励
+            "\233\162\134\229\143\150\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取任务奖励 (Claim Task Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\228\187\188\228\188\161\229\165\150\229\138\177", -- 领取所有任务奖励 (Claim All Task Rewards)
+            "\233\162\134\229\143\150\231\155\174\231\155\133\229\165\150\229\138\177", -- 领取目标奖励 (Claim Target Reward)
+            "\233\162\134\229\143\150\230\136\144\229\176\178\229\165\150\229\138\177", -- 领取成就奖励 (Claim Achievement Reward)
+            "\233\162\134\229\143\150\230\137\136\230\156\137\229\165\150\229\138\177", -- 领取所有奖励 (Claim All Rewards)
+            "\233\162\134\229\143\150\229\176\145\231\131\169\229\165\150\229\138\177", -- 领取宠物奖励 (Claim Pet Reward)
             "ClaimQuest",
             "ClaimPetQuest",
             "ClaimPet",
@@ -732,19 +733,17 @@ local function doClaimPetQuest()
         if remoteEvent then
             for _, cmd in ipairs(claimCommands) do
                 pcall(function() remoteEvent:FireServer(cmd) end)
-                task.wait(0.05)
             end
         end
 
         if remoteFunc then
             for _, cmd in ipairs(claimCommands) do
                 pcall(function() remoteFunc:InvokeServer(cmd) end)
-                task.wait(0.05)
             end
         end
     end)
 
-    -- Method 2: Cari semua RemoteEvent/RemoteFunction di Msg dan sub-folder
+    -- 2. Cari semua RemoteEvent/RemoteFunction di Msg dan sub-folder
     pcall(function()
         local msg = ReplicatedStorage:FindFirstChild("Msg")
         if not msg then return end
@@ -763,7 +762,7 @@ local function doClaimPetQuest()
         end
     end)
 
-    -- Method 3: Scan ServerMsg folder juga
+    -- 3. Scan ServerMsg folder juga
     pcall(function()
         local serverMsg = ReplicatedStorage:FindFirstChild("ServerMsg")
         if not serverMsg then return end
@@ -782,40 +781,88 @@ local function doClaimPetQuest()
         end
     end)
 
-    -- Method 4: UI Button auto-click (universal fallback)
+    -- 4. Ringan & Efisien UI Clicker Kompatibel Xeno & All Executors
     pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not playerGui then return end
 
+        local targetGuis = {}
         for _, gui in ipairs(playerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" then
-                for _, v in ipairs(gui:GetDescendants()) do
-                    if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
-                        local btnName = string.lower(v.Name)
-                        local btnText = ""
-                        if v:IsA("TextButton") then btnText = string.lower(v.Text) end
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "GymStarMinGui" and gui.Name ~= "Chat" then
+                local nameLower = string.lower(gui.Name)
+                if nameLower:find("pet") or nameLower:find("quest") or nameLower:find("task") or nameLower:find("reward") or nameLower:find("main") then
+                    table.insert(targetGuis, gui)
+                end
+            end
+        end
 
-                        if btnName:find("claim") or btnName:find("reward") or btnName:find("collect")
-                        or btnText:find("claim") or btnText:find("reward") or btnText:find("collect")
-                        or btnText:find("\233\162\134\229\143\150") then
-                            -- Multi-method click
-                            pcall(function()
-                                if typeof(firesignal) == "function" then
-                                    firesignal(v.MouseButton1Click)
-                                    firesignal(v.Activated)
-                                end
-                            end)
-                            pcall(function()
-                                if typeof(getconnections) == "function" then
-                                    for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
-                                        if conn.Fire then pcall(function() conn:Fire() end) end
-                                        if conn.Function then pcall(function() conn.Function() end) end
-                                    end
-                                end
-                            end)
-                            pcall(function()
-                                if v.Activate then v:Activate() end
-                            end)
+        local VIM = pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")
+        local GuiService = game:GetService("GuiService")
+
+        -- Helper klik multi-method (Dukungan penuh Xeno & Low-UNC Executor)
+        local function clickBtn(v)
+            -- Method 1: Executor custom firesignal (Real/High-UNC Executors)
+            if typeof(firesignal) == "function" then
+                pcall(function() firesignal(v.MouseButton1Click) end)
+                pcall(function() firesignal(v.Activated) end)
+            end
+
+            -- Method 2: getconnections (Real/High-UNC Executors)
+            if typeof(getconnections) == "function" then
+                pcall(function()
+                    for _, conn in ipairs(getconnections(v.MouseButton1Click)) do
+                        if type(conn) == "table" or typeof(conn) == "RBXScriptConnection" or typeof(conn) == "UserData" then
+                            if conn.Fire then pcall(function() conn:Fire() end) end
+                            if conn.Function then pcall(function() conn.Function() end) end
+                        end
+                    end
+                end)
+            end
+
+            -- Method 3: Roblox Native GuiService + VirtualInputManager (Khusus Xeno & Low-UNC)
+            pcall(function()
+                if VIM and v.Visible then
+                    local oldSelected = GuiService.SelectedObject
+                    GuiService.SelectedObject = v
+                    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                    task.wait(0.02)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                    GuiService.SelectedObject = oldSelected
+                end
+            end)
+
+            -- Method 4: Simulasi Klik Mouse Koordinat Layar via VirtualInputManager (Fallback Xeno)
+            pcall(function()
+                if VIM and v.Visible and v.AbsolutePosition and v.AbsoluteSize then
+                    local pos = v.AbsolutePosition
+                    local size = v.AbsoluteSize
+                    if pos.X > 0 and pos.Y > 0 and size.X > 0 and size.Y > 0 then
+                        local cx = pos.X + (size.X / 2)
+                        local cy = pos.Y + (size.Y / 2) + 36 -- Inset offset Roblox
+                        VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                        task.wait(0.02)
+                        VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                    end
+                end
+            end)
+
+            -- Method 5: Activate
+            pcall(function() if v.Activate then v:Activate() end end)
+        end
+
+        for _, gui in ipairs(targetGuis) do
+            for _, v in ipairs(gui:GetDescendants()) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+                    local name = string.lower(v.Name)
+                    local text = (v:IsA("TextButton") and string.lower(v.Text)) or ""
+                    if name:find("claim") or name:find("reward") or text:find("claim") or text:find("\233\162\134\229\143\150") then
+                        clickBtn(v)
+                    end
+                end
+            end
+        end
+    end)
+end end)
                         end
                     end
                 end
