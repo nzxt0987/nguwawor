@@ -906,7 +906,11 @@ handleToggle(AutoRollClick, "AutoRoll", nil, false, function(state, token)
         task.spawn(function()
             while env.GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == currentToken do
                 pcall(function()
-                    game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
+                    local msg = ReplicatedStorage:FindFirstChild("Msg")
+                    local remoteFunc = msg and msg:FindFirstChild("RemoteFunction")
+                    if remoteFunc then
+                        remoteFunc:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
+                    end
                 end)
                 task.wait(1.2)
             end
@@ -1088,7 +1092,11 @@ task.spawn(function()
     startFeature("AutoRoll", AutoRollTrack, AutoRollKnob, AutoRollIcon, function(token)
         while env.GymStarToggles["AutoRoll"] and scriptRunning and activeLoopTokens["AutoRoll"] == token do
             pcall(function()
-                game:GetService("ReplicatedStorage").Msg.RemoteFunction:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
+                local msg = ReplicatedStorage:FindFirstChild("Msg")
+                local remoteFunc = msg and msg:FindFirstChild("RemoteFunction")
+                if remoteFunc then
+                    remoteFunc:InvokeServer("\230\138\189\229\143\150\229\133\137\231\142\175")
+                end
             end)
             task.wait(1.2)
         end
